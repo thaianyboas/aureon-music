@@ -63,6 +63,10 @@ def main(plus_src: str, cast_src: str, out: str):
         (re.compile(r"hass\.data\.get\(DOMAIN"), "hass.data.get(DATA_KEY"),
         (re.compile(r",\s*domain=DOMAIN,"), ","),
         ("integration: spotcast", f"integration: {DOMAIN}"),
+        # Names the owner sees on devices and entities: Spotify, never the upstream project name.
+        ('return f"Spotcast ({', 'return f"Spotify ({'),
+        ('return f"Spotcast - {', 'return f"Spotify - {'),
+        ('name=f"Spotcast {', 'name=f"Spotify {'),
     ])
     # DATA_KEY next to DOMAIN in each const module, and imported wherever DATA_KEY is used.
     for core, key in ((plus, "aureon_music_spotifyplus"), (cast, "aureon_music_spotcast")):
@@ -92,10 +96,27 @@ def deep_merge(a, b):
 
 
 MENU = {
-    "en": {"title": "AUREON Music", "description": "What would you like to add?", "menu_options": {"spotifyplus": "Spotify account (player, library, search) — SpotifyPlus", "spotcast": "Start Spotify on Cast / Alexa speakers — Spotcast"}},
-    "de": {"title": "AUREON Musik", "description": "Was möchtest du hinzufügen?", "menu_options": {"spotifyplus": "Spotify-Konto (Player, Mediathek, Suche) — SpotifyPlus", "spotcast": "Spotify auf Cast- / Alexa-Lautsprechern starten — Spotcast"}},
-    "pt": {"title": "AUREON Música", "description": "O que você quer adicionar?", "menu_options": {"spotifyplus": "Conta do Spotify (player, biblioteca, busca) — SpotifyPlus", "spotcast": "Tocar Spotify em caixas Cast / Alexa — Spotcast"}},
+    "en": {"title": "AUREON Music", "description": "How should AUREON Music talk to Spotify?", "menu_options": {"spotifyplus": "Spotify account: player, library and search (Spotify Web API)", "spotcast": "Play on Cast / Alexa speakers (Spotify Connect)"}},
+    "de": {"title": "AUREON Musik", "description": "Wie soll AUREON Musik mit Spotify sprechen?", "menu_options": {"spotifyplus": "Spotify-Konto: Player, Mediathek und Suche (Spotify Web API)", "spotcast": "Auf Cast- / Alexa-Lautsprechern abspielen (Spotify Connect)"}},
+    "pt": {"title": "AUREON Música", "description": "Como o AUREON Música deve falar com o Spotify?", "menu_options": {"spotifyplus": "Conta do Spotify: player, biblioteca e busca (Spotify Web API)", "spotcast": "Tocar em caixas Cast / Alexa (Spotify Connect)"}},
+    "fr": {"title": "AUREON Musique", "description": "Comment AUREON Musique doit-il parler à Spotify ?", "menu_options": {"spotifyplus": "Compte Spotify : lecteur, bibliothèque et recherche (Spotify Web API)", "spotcast": "Lire sur les enceintes Cast / Alexa (Spotify Connect)"}},
 }
+# The owner sees one product: user-facing texts never name the upstream projects (credits stay in NOTICE.md).
+PRODUCT = {"en": "AUREON Music", "de": "AUREON Musik", "pt": "AUREON Música", "fr": "AUREON Musique"}
+
+
+def neutral_names(value, lang="en"):
+    """Replace the upstream project names in every user-facing text value (keys stay untouched)."""
+    if isinstance(value, dict):
+        return {k: neutral_names(v, lang) for k, v in value.items()}
+    if isinstance(value, list):
+        return [neutral_names(v, lang) for v in value]
+    if isinstance(value, str):
+        name = PRODUCT.get(lang, PRODUCT["en"])
+        for word in ("SpotifyPlus", "Spotcast"):
+            value = value.replace(f"{word} integration", f"{name} integration").replace(f"Die {word} Integration", f"Die {name} Integration").replace(word, name)
+        return value
+    return value
 
 
 def merge_resources(out: Path, plus: Path, cast: Path):
@@ -103,6 +124,7 @@ def merge_resources(out: Path, plus: Path, cast: Path):
     load = lambda p: json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     strings = deep_merge(load(plus / "strings.json"), load(cast / "strings.json"))
     strings.setdefault("config", {}).setdefault("step", {})["user"] = MENU["en"]
+    strings = neutral_names(strings, "en")
     (out / "strings.json").write_text(json.dumps(strings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tr = out / "translations"
     tr.mkdir(exist_ok=True)
@@ -110,6 +132,7 @@ def merge_resources(out: Path, plus: Path, cast: Path):
         data = deep_merge(load(plus / "translations" / f"{lang}.json"), load(cast / "translations" / f"{lang}.json"))
         if lang in MENU:
             data.setdefault("config", {}).setdefault("step", {})["user"] = MENU[lang]
+        data = neutral_names(data, lang)
         if data:
             (tr / f"{lang}.json").write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if (cast / "icons.json").exists():

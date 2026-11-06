@@ -132,7 +132,7 @@ class SpotcastEntity(CoordinatorEntity[SpotcastCoordinator], ABC):
     @property
     def name(self) -> str:
         """Returns the name of the entity."""
-        return f"Spotcast - {self.account.name} {self.GENERIC_NAME}"
+        return f"Spotify - {self.account.name} {self.GENERIC_NAME}"
 
     @property
     def unique_id(self) -> str:

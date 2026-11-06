@@ -13,12 +13,12 @@
         "description": "Wählen Sie die Zugangsdaten für das Nutzerkonto aus."
       },
       "reauth_confirm": {
-        "title": "Spotcast Zugangsdaten aktualisieren",
-        "description": "Die Spotcast Integration muss das Nutzerkonto erneut authentifizieren."
+        "title": "AUREON Musik Zugangsdaten aktualisieren",
+        "description": "Die AUREON Musik Integration muss das Nutzerkonto erneut authentifizieren."
       },
       "desktop_auth": {
         "title": "Desktop-Autorisierung",
-        "description": "Spotcast benötigt einen zweiten Service um sich als Spotify Desktop Anwendung zu identifizieren. Methode auswählen:",
+        "description": "AUREON Musik benötigt einen zweiten Service um sich als Spotify Desktop Anwendung zu identifizieren. Methode auswählen:",
         "menu_options": {
           "desktop_api_manual": "Weiterleitungs-URL (Redirect URL) einfügen (empfohlen, keine Zusatzsoftware)",
           "desktop_api_auto": "Relay Server verwenden (automatische Weiterleitung)"
@@ -40,10 +40,10 @@
       },
       "user": {
         "title": "AUREON Musik",
-        "description": "Was möchtest du hinzufügen?",
+        "description": "Wie soll AUREON Musik mit Spotify sprechen?",
         "menu_options": {
-          "spotifyplus": "Spotify-Konto (Player, Mediathek, Suche) — SpotifyPlus",
-          "spotcast": "Spotify auf Cast- / Alexa-Lautsprechern starten — Spotcast"
+          "spotifyplus": "Spotify-Konto: Player, Mediathek und Suche (Spotify Web API)",
+          "spotcast": "Auf Cast- / Alexa-Lautsprechern abspielen (Spotify Connect)"
         }
       }
     },
@@ -80,7 +80,7 @@
           "device_filter_mode": "`Exklusiv` ignoriert Geräte, die dem Muster entsprechen. `Inklusiv` erstellt nur Entitäten für Geräte, die dem Muster entsprechen.",
           "device_filter_patterns": "Durch Kommata getrennte Gerätenamen. Groß-/Kleinschreibung wird ignoriert und Platzhalter sind erlaubt, z.B.: `*Jam*, Pixel 7 Pro`. Wenn kein Muster angegeben wird, werden alle Geräte akzeptiert."
         },
-        "title": "Spotcast - Optionen"
+        "title": "AUREON Musik - Optionen"
       }
     },
     "abort": {
@@ -160,7 +160,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "items": {
           "name": "Lieder",
@@ -182,7 +182,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "account": {
           "name": "Spotify Nutzerkonto",
@@ -200,7 +200,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "search_term": {
           "name": "Suchbegriff",
@@ -234,7 +234,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "account": {
           "name": "Spotify Nutzerkonto",
@@ -252,7 +252,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "spotify_uri": {
           "name": "URI",
@@ -274,7 +274,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "account": {
           "name": "Spotify Nutzerkonto",
@@ -292,7 +292,7 @@
       "fields": {
         "media_player": {
           "name": "Ziel",
-          "description": "Ein Media Player der mit Spotcast kompatibel ist."
+          "description": "Ein Media Player der mit AUREON Musik kompatibel ist."
         },
         "account": {
           "name": "Spotify Nutzerkonto",

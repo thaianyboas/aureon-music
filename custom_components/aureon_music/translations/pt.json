@@ -3,10 +3,10 @@
     "step": {
       "user": {
         "title": "AUREON Música",
-        "description": "O que você quer adicionar?",
+        "description": "Como o AUREON Música deve falar com o Spotify?",
         "menu_options": {
-          "spotifyplus": "Conta do Spotify (player, biblioteca, busca) — SpotifyPlus",
-          "spotcast": "Tocar Spotify em caixas Cast / Alexa — Spotcast"
+          "spotifyplus": "Conta do Spotify: player, biblioteca e busca (Spotify Web API)",
+          "spotcast": "Tocar em caixas Cast / Alexa (Spotify Connect)"
         }
       }
     }

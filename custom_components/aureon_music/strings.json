@@ -12,8 +12,8 @@
         "description": "Select the application credentials to use for this account."
       },
       "reauth_confirm": {
-        "title": "Re-authenticate Spotcast",
-        "description": "The Spotcast integration needs to re-authenticate your account."
+        "title": "Re-authenticate AUREON Music",
+        "description": "The AUREON Music integration needs to re-authenticate your account."
       },
       "desktop_api": {
         "data": {
@@ -24,7 +24,7 @@
       },
       "desktop_auth": {
         "title": "Desktop authorization",
-        "description": "Spotcast needs a second authorization using the Spotify desktop application identity. Choose how to complete it.",
+        "description": "AUREON Music needs a second authorization using the Spotify desktop application identity. Choose how to complete it.",
         "menu_options": {
           "desktop_api_manual": "Paste the redirect URL (recommended, no extra software)",
           "desktop_api_auto": "Use the relay server (automatic redirect)"
@@ -46,10 +46,10 @@
       },
       "user": {
         "title": "AUREON Music",
-        "description": "What would you like to add?",
+        "description": "How should AUREON Music talk to Spotify?",
         "menu_options": {
-          "spotifyplus": "Spotify account (player, library, search) — SpotifyPlus",
-          "spotcast": "Start Spotify on Cast / Alexa speakers — Spotcast"
+          "spotifyplus": "Spotify account: player, library and search (Spotify Web API)",
+          "spotcast": "Play on Cast / Alexa speakers (Spotify Connect)"
         }
       }
     },
@@ -115,19 +115,19 @@
       },
       "apply_options": {
         "data": {
-          "set_default": "Set the current account as the default Spotcast account",
+          "set_default": "Set the current account as the default AUREON Music account",
           "base_refresh_rate": "Base Refresh Rate",
           "stale_device_timeout": "Stale device timeout",
           "device_filter_mode": "Device filter mode",
           "device_filter_patterns": "Device filter patterns"
         },
         "data_description": {
-          "base_refresh_rate": "How often (in seconds) Spotcast refreshes the account data from Spotify.",
+          "base_refresh_rate": "How often (in seconds) AUREON Music refreshes the account data from Spotify.",
           "stale_device_timeout": "Days before an unavailable device and its entity are removed. 0 removes them immediately.",
           "device_filter_mode": "Deny ignores devices matching the patterns. Allow only creates entities for matching devices.",
           "device_filter_patterns": "Comma-separated device names, case insensitive, wildcards allowed. Example: `*Jam*, Pixel 7 Pro`. Leave empty to keep every device."
         },
-        "title": "Spotcast - Options"
+        "title": "AUREON Music - Options"
       }
     },
     "error": {
@@ -2911,7 +2911,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "items": {
           "name": "Items",
@@ -2933,7 +2933,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "account": {
           "name": "Spotify Account",
@@ -2951,7 +2951,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "search_term": {
           "name": "Search Term",
@@ -2985,7 +2985,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "account": {
           "name": "Spotify Account",
@@ -3003,7 +3003,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "spotify_uri": {
           "name": "URI",
@@ -3025,7 +3025,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "account": {
           "name": "Spotify Account",
@@ -3043,7 +3043,7 @@
       "fields": {
         "media_player": {
           "name": "Target",
-          "description": "A Single Media Player compatible with Spotcast"
+          "description": "A Single Media Player compatible with AUREON Music"
         },
         "account": {
           "name": "Spotify Account",

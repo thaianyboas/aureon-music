@@ -71,7 +71,7 @@ class ProfileMixin:
             identifiers={(DOMAIN, self.id)},
             manufacturer="Spotify AB",
             model=f"Spotify {self.profile['product']}",
-            name=f"Spotcast {self.name}",
+            name=f"Spotify {self.name}",
             entry_type=DeviceEntryType.SERVICE,
             configuration_url="https://open.spotify.com",
         )

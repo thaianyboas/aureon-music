@@ -13,12 +13,12 @@
         "description": "Sélectionnez les informations d'identification à utiliser pour ce compte."
       },
       "reauth_confirm": {
-        "title": "Ré-authentifier Spotcast",
-        "description": "L'intégration Spotcast a besoin de réauthentifier votre compte."
+        "title": "Ré-authentifier AUREON Musique",
+        "description": "L'intégration AUREON Musique a besoin de réauthentifier votre compte."
       },
       "desktop_auth": {
         "title": "Autorisation via le client de bureau",
-        "description": "Spotcast a besoin d'une seconde autorisation utilisant l'identité de l'application de bureau Spotify. Choisissez comment la réaliser.",
+        "description": "AUREON Musique a besoin d'une seconde autorisation utilisant l'identité de l'application de bureau Spotify. Choisissez comment la réaliser.",
         "menu_options": {
           "desktop_api_manual": "Coller l'URL de redirection (recommandé, sans logiciel supplémentaire)",
           "desktop_api_auto": "Utiliser le serveur relais (redirection automatique)"
@@ -36,6 +36,14 @@
         "description": "Veuillez suivre le [guide de configuration]({setup_guide}) avant de continuer.\n\nVous avez déjà saisi des informations d'identification et devez les modifier ? Consultez [comment les réinitialiser]({credentials_guide}).",
         "data": {
           "confirmed": "J'ai lu la documentation"
+        }
+      },
+      "user": {
+        "title": "AUREON Musique",
+        "description": "Comment AUREON Musique doit-il parler à Spotify ?",
+        "menu_options": {
+          "spotifyplus": "Compte Spotify : lecteur, bibliothèque et recherche (Spotify Web API)",
+          "spotcast": "Lire sur les enceintes Cast / Alexa (Spotify Connect)"
         }
       }
     },
@@ -60,7 +68,7 @@
     "step": {
       "apply_options": {
         "data": {
-          "set_default": "Définir ce compte comme compte Spotcast par défaut.",
+          "set_default": "Définir ce compte comme compte AUREON Musique par défaut.",
           "base_refresh_rate": "Taux de rafraichissement de base",
           "stale_device_timeout": "Délai de suppression des appareils",
           "device_filter_mode": "Mode de filtrage des appareils",
@@ -72,7 +80,7 @@
           "device_filter_mode": "Refuser ignore les appareils correspondant aux motifs. Autoriser ne crée des entités que pour les appareils correspondants.",
           "device_filter_patterns": "Noms d'appareils séparés par des virgules, insensibles à la casse, jokers autorisés. Exemple : `*Jam*, Pixel 7 Pro`. Laisser vide pour conserver tous les appareils."
         },
-        "title": "Spotcast - Options"
+        "title": "AUREON Musique - Options"
       }
     },
     "abort": {
@@ -152,7 +160,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "items": {
           "name": "Items",
@@ -174,7 +182,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "account": {
           "name": "Compte Spotify",
@@ -192,7 +200,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "search_term": {
           "name": "Terme de recherche",
@@ -226,7 +234,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "account": {
           "name": "Compte Spotify",
@@ -244,7 +252,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "spotify_uri": {
           "name": "URI",
@@ -266,7 +274,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "account": {
           "name": "Compte Spotify",
@@ -284,7 +292,7 @@
       "fields": {
         "media_player": {
           "name": "Cible",
-          "description": "Un lecteur multimedia compatible avec Spotcast."
+          "description": "Un lecteur multimedia compatible avec AUREON Musique."
         },
         "account": {
           "name": "Compte Spotify",

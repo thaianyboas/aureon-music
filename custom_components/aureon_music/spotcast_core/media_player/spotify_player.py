@@ -108,7 +108,7 @@ class SpotifyDevice(  # pylint: disable=too-many-instance-attributes
     def name(self):
         """The name of the device as reported by Spotify"""
         name = self.device_data["name"]
-        return f"Spotcast ({self._account.name}) - {name}"
+        return f"Spotify ({self._account.name}) - {name}"
 
     @property
     def icon(self):
