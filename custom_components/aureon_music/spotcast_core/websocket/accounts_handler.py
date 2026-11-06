@@ -1,0 +1,55 @@
+"""Websocket Endpoint for getting the list of accounts"""
+from ..const import DATA_KEY  # AUREON: own hass.data key
+
+import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
+from homeassistant.core import HomeAssistant
+from homeassistant.components.websocket_api import ActiveConnection
+
+from custom_components.aureon_music.spotcast_core import DOMAIN
+from custom_components.aureon_music.spotcast_core.spotify.account import SpotifyAccount
+from custom_components.aureon_music.spotcast_core.websocket.utils import websocket_wrapper
+
+ENDPOINT = "spotcast/accounts"
+SCHEMA = vol.Schema({
+    vol.Required("id"): cv.positive_int,
+    vol.Required("type"): ENDPOINT,
+})
+
+
+@websocket_wrapper
+async def async_get_accounts(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict
+):
+    """Gets a list playlists from an account
+
+    Args:
+        - hass(HomeAssistant): the Home Assistant Instance
+        - connection(ActiveConnection): the Active Websocket connection
+            object
+        - msg(dict): the message received through the websocket API
+    """
+
+    accounts: dict[str, SpotifyAccount]
+    accounts = {x: y["account"] for x, y in hass.data[DATA_KEY].items()}
+
+    result = []
+
+    for entry_id, account in accounts.items():
+        result.append({
+            "entry_id": entry_id,
+            "spotify_id": account.id,
+            "spotify_name": account.name,
+            "is_default": account.is_default,
+            "country": account.country,
+        })
+
+    connection.send_result(
+        msg["id"],
+        {
+            "total": len(result),
+            "accounts": result,
+        },
+    )

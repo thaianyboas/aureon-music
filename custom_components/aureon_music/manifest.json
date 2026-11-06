@@ -1,0 +1,24 @@
+{
+  "domain": "aureon_music",
+  "name": "AUREON Música",
+  "after_dependencies": ["cast"],
+  "codeowners": ["@thaianyboas"],
+  "config_flow": true,
+  "dependencies": ["application_credentials", "zeroconf", "spotify", "cast"],
+  "documentation": "https://github.com/thaianyboas/aureon-music",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/thaianyboas/aureon-music/issues",
+  "loggers": ["spotipy", "pychromecast", "spotifywebapipython"],
+  "requirements": [
+    "numpy>=2.3.2",
+    "oauthlib>=3.2.2",
+    "platformdirs>=4.1.0",
+    "requests_oauthlib>=1.3.1",
+    "smartinspectpython>=3.0.38",
+    "spotifywebapipython>=1.0.297",
+    "spotipy>=2.26.0",
+    "RapidFuzz>=3.14.5"
+  ],
+  "version": "1.0.0"
+}

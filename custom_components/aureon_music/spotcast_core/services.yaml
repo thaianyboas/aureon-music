@@ -1,0 +1,310 @@
+play_media:
+  name: Play Media
+  description: Play spotify media on chromecast devices
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    spotify_uri:
+      name: URI
+      description: Supported Spotify URI as string
+      example: spotify:album:5l5m1hnH4punS1GQXgEi3T
+      required: true
+      selector:
+        text:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the play_media service call.
+      required: false
+      selector:
+        object:
+play_dj:
+  name: Spotify DJ Playlist
+  description: Play spotify DJ playlist on a Chromecast device
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the play_media service call.
+      required: false
+      selector:
+        object:
+transfer_playback:
+  name: Transfer Playback
+  description: Transfers the spotify playback to the targetted device
+  fields:
+    media_player:
+      name: Media Player
+      required: true
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the service call.
+      required: false
+      selector:
+        object:
+play_liked_songs:
+  name: Liked Songs Playlist
+  description: Play User's Liked Songs'
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the service call.
+      required: false
+      selector:
+        object:
+play_saved_episodes:
+  name: Saved Podcast
+  description: Play User's Saved Podcast Episodes
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the service call.
+      required: false
+      selector:
+        object:
+play_custom_context:
+  name: Play Custom Context
+  description: Play media from a custom list of tracks URIs
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    tracks:
+      name: Items
+      description: A list of Spotify URIs
+      example: spotify:track:55mJleti2WfWEFNFcBduhc
+      required: true
+      selector:
+        object:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the service call.
+      required: false
+      selector:
+        object:
+play_from_search:
+  name: Play From Search
+  description: Play media from a search result
+  fields:
+    media_player:
+      name: Media Player
+      required: false
+      selector:
+        target:
+          entity:
+            - domain: media_player
+              integration: cast
+            - domain: media_player
+              integration: aureon_music
+    search_term:
+      name: Search Term
+      description: The term to search in Spotify Catalog
+      example: Joy as an Act of Resistance.
+      required: true
+      selector:
+        text:
+          multiline: false
+    item_types:
+      name: Item Type
+      description: The type of item to return from the search result
+      example: album
+      required: true
+      default:
+        - album
+        - artist
+        - playlist
+        - track
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Album
+              value: album
+            - label: Artist
+              value: artist
+            - label: Playlist
+              value: playlist
+            - label: Track
+              value: track
+            - label: Show
+              value: show
+            - label: Episode
+              value: episode
+            - label: Audiobook
+              value: audiobook
+          mode: list
+    tags:
+      name: Tags
+      description: Tags to add to the search query filters
+      example: hipster
+      selector:
+        select:
+          options:
+            - label: Hipster
+              value: hipster
+            - label: New
+              value: new
+          multiple: true
+          mode: list
+    filters:
+      name: Filters
+      description: Filters to apply to the search query. See [Spotify API Documentation](https://developer.spotify.com/documentation/web-api/reference/search)
+      selector:
+        object:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+    data:
+      name: Data
+      description: Additional modifiers for the service call.
+      required: false
+      selector:
+        object:
+add_to_queue:
+  name: Add To Queue
+  description: Add Items to Spotify Queue
+  fields:
+    spotify_uris:
+      name: Spotify URIs
+      description: A list of Spotify URIs
+      required: true
+      selector:
+        object:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+like_media:
+  name: Like Media
+  description: Save a list of Media to your Spotify Library
+  fields:
+    spotify_uris:
+      name: Spotify URIs
+      description: A list of Spotify URIs
+      required: true
+      selector:
+        object:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music
+
+unlike_media:
+  name: Unlike Media
+  description: Remove a list of Media from your Spotify Library
+  fields:
+    spotify_uris:
+      name: Spotify URIs
+      description: A list of Spotify URIs
+      required: true
+      selector:
+        object:
+    account:
+      name: Spotify Account
+      description: The id of the spotify account to use. Takes the default account otherwise
+      required: false
+      selector:
+        config_entry:
+          integration: aureon_music

@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AUREON Música",
+        "description": "O que você quer adicionar?",
+        "menu_options": {
+          "spotifyplus": "Conta do Spotify (player, biblioteca, busca) — SpotifyPlus",
+          "spotcast": "Tocar Spotify em caixas Cast / Alexa — Spotcast"
+        }
+      }
+    }
+  }
+}
