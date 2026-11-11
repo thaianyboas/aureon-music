@@ -20,16 +20,23 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia técnica
+## Motor nativo — prévia HACS 1.1.0b1
 
 O menu **Conta Spotify (nativa, prévia)** cria uma entrada separada e usa a Spotify Web API com OAuth/PKCE.
-As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. Esta prévia ainda não é a versão final
-para instalação pelo HACS.
+As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
+`master` para testar com uma conta Spotify real e dispositivos físicos.
+
+1. Faça um backup do Home Assistant.
+2. No HACS, abra **AUREON Música**. Atualize as informações do repositório e use **Baixar novamente**. Se o
+   HACS oferecer uma seleção de versão, escolha `master`.
+3. Reinicie o Home Assistant e adicione uma **Conta Spotify (nativa, prévia)** sem excluir sua conta anterior.
+4. Se o menu de Música do AUREON Dashboard não oferecer a conta nativa, atualize também o **AUREON Dashboard**
+   pelo HACS e recarregue a página. O bundle da `master` já inclui o suporte à conta nativa.
 
 O mínimo do pacote atual é Home Assistant 2025.4.0. O Cast do HA 2025.1 a 2025.3 fixa uma versão do
 PyChromecast abaixo da exigida pela biblioteca legada que ainda acompanha o pacote.
 
-Em um Home Assistant descartável, use o **Client ID** do seu app Spotify Developer. Com My Home Assistant habilitado,
+Use o **Client ID** do seu app Spotify Developer. Com My Home Assistant habilitado,
 cadastre `https://my.home-assistant.io/redirect/oauth` no app. Sem My Home Assistant, cadastre o endereço HTTPS
 exato do seu Home Assistant seguido de `/auth/external/callback`. Autorize a conta no Spotify quando o Home Assistant
 abrir a página de login. O fluxo nativo não pede Client Secret.
