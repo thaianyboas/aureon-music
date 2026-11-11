@@ -34,14 +34,17 @@ class NativeSpotifyApi:
         params: Mapping[str, Any] | None = None,
         json: Any = None,
     ) -> Any:
-        if (not path.startswith("/") or path.startswith("//")\n                or "://" in path or "?" in path or "#" in path):
+        if (not path.startswith("/") or path.startswith("//")
+                or "://" in path or "?" in path or "#" in path):
             raise ValueError("Spotify API path must begin with a single slash")
         method = method.upper()
         if method not in {"GET", "POST", "PUT", "DELETE"}:
             raise ValueError("Unsupported Spotify API method")
         rejected_access: str | None = None
         for attempt in range(2):
-            access = await self._tokens.access_token(\n                force_refresh=bool(attempt), rejected_access_token=rejected_access\n            )
+            access = await self._tokens.access_token(
+                force_refresh=bool(attempt), rejected_access_token=rejected_access
+            )
             async with self._session.request(
                 method,
                 BASE_URL + path,
