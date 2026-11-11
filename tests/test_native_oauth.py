@@ -100,3 +100,85 @@ async def test_parallel_rejected_access_token_only_rotates_once():
     ))
     assert results == ["new"] * 6
     assert calls == ["old"]
+
+
+@pytest.mark.asyncio
+async def test_failed_save_retries_pending_rotation_without_second_refresh():
+    refresh_calls, persisted = [], []
+    should_fail = True
+
+    async def refresh(old):
+        refresh_calls.append(old)
+        return {"access_token": "new-access", "refresh_token": "rotated", "expires_in": 3600}
+
+    async def save(token):
+        nonlocal should_fail
+        if should_fail:
+            should_fail = False
+            raise OSError("disk unavailable")
+        persisted.append(dict(token))
+
+    manager = NativeSpotifyTokenManager(
+        {"access_token": "old", "refresh_token": "original", "expires_at": 0},
+        refresh, save, clock=lambda: 100,
+    )
+    with pytest.raises(OSError):
+        await manager.access_token()
+    assert manager.token["refresh_token"] == "original"
+    assert await manager.access_token() == "new-access"
+    assert refresh_calls == ["original"]
+    assert persisted[0]["refresh_token"] == "rotated"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_save_keeps_rotation_for_next_request():
+    refresh_calls, persisted = [], []
+    started = asyncio.Event()
+    proceed = asyncio.Event()
+
+    async def refresh(old):
+        refresh_calls.append(old)
+        return {"access_token": "new", "refresh_token": "rotated", "expires_in": 3600}
+
+    async def save(token):
+        if not started.is_set():
+            started.set()
+            await proceed.wait()
+        persisted.append(dict(token))
+
+    manager = NativeSpotifyTokenManager(
+        {"access_token": "old", "refresh_token": "original", "expires_at": 0},
+        refresh, save, clock=lambda: 100,
+    )
+    task = asyncio.create_task(manager.access_token())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    proceed.set()
+    assert await manager.access_token() == "new"
+    assert refresh_calls == ["original"]
+    assert persisted[0]["refresh_token"] == "rotated"
+
+
+@pytest.mark.asyncio
+async def test_reloaded_persisted_rotation_works_after_restart():
+    stored = []
+
+    async def refresh(_):
+        return {"access_token": "new", "refresh_token": "rotated", "expires_in": 3600}
+
+    async def save(token):
+        stored.append(dict(token))
+
+    manager = NativeSpotifyTokenManager(
+        {"access_token": "old", "refresh_token": "original", "expires_at": 0},
+        refresh, save, clock=lambda: 100,
+    )
+    assert await manager.access_token() == "new"
+
+    async def should_not_refresh(_):
+        raise AssertionError("must not refresh after successful restart")
+
+    restarted = NativeSpotifyTokenManager(stored[-1], should_not_refresh, save, clock=lambda: 150)
+    assert await restarted.access_token() == "new"
