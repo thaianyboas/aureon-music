@@ -76,3 +76,27 @@ async def test_save_failure_does_not_publish_unpersisted_token():
     with pytest.raises(OSError):
         await manager.access_token()
     assert manager.token["refresh_token"] == "original"
+
+
+@pytest.mark.asyncio
+async def test_parallel_rejected_access_token_only_rotates_once():
+    calls = []
+
+    async def refresh(old):
+        calls.append(old)
+        await asyncio.sleep(0.01)
+        return {"access_token": "new", "refresh_token": "rotated", "expires_in": 3600}
+
+    async def save(_):
+        pass
+
+    manager = NativeSpotifyTokenManager(
+        {"access_token": "expired", "refresh_token": "old", "expires_at": 9999},
+        refresh, save, clock=lambda: 100,
+    )
+    results = await asyncio.gather(*(
+        manager.access_token(force_refresh=True, rejected_access_token="expired")
+        for _ in range(6)
+    ))
+    assert results == ["new"] * 6
+    assert calls == ["old"]
