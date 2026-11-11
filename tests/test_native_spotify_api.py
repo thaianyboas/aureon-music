@@ -33,7 +33,7 @@ class Tokens:
     def __init__(self):
         self.forces = []
 
-    async def access_token(self, *, force_refresh=False):
+    async def access_token(self, *, force_refresh=False, rejected_access_token=None):
         self.forces.append(force_refresh)
         return "refreshed" if force_refresh else "initial"
 
