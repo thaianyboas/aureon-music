@@ -39,8 +39,9 @@ class NativeSpotifyApi:
         method = method.upper()
         if method not in {"GET", "POST", "PUT", "DELETE"}:
             raise ValueError("Unsupported Spotify API method")
+        rejected_access: str | None = None
         for attempt in range(2):
-            access = await self._tokens.access_token(force_refresh=bool(attempt))
+            access = await self._tokens.access_token(\n                force_refresh=bool(attempt), rejected_access_token=rejected_access\n            )
             async with self._session.request(
                 method,
                 BASE_URL + path,
@@ -49,6 +50,7 @@ class NativeSpotifyApi:
                 json=json,
             ) as response:
                 if response.status == 401 and attempt == 0:
+                    rejected_access = access
                     continue
                 if response.status == 204:
                     return None
