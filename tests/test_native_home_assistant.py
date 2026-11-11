@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.core import Context
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers.config_entry_oauth2_flow import _decode_jwt
+from homeassistant.helpers.entity_platform import async_get_platforms
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.aureon_music.native_ha_adapter import NativeTokenStore
@@ -34,6 +35,7 @@ class Response:
 class Spotify:
     def __init__(self):
         self.profile_id = "fixture-user"
+        self.offline = False
         self.requests = []
         self.device = {
             "id": "speaker-1",
@@ -49,6 +51,8 @@ class Spotify:
         )
 
     def request(self, method, url, **kwargs):
+        if self.offline:
+            raise ConnectionError("Simulated connection loss")
         self.requests.append((method, url, kwargs))
         if url.endswith("/me"):
             return Response(
@@ -219,6 +223,22 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     assert await hass.config_entries.async_reload(result["result"].entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(state.entity_id).attributes["media_title"] == "Fixture Song"
+
+    player = next(
+        platform.entities[state.entity_id]
+        for platform in async_get_platforms(hass, "aureon_music")
+        if state.entity_id in platform.entities
+    )
+    credentials = NativeTokenStore(hass, data["credential_key"])
+    saved = await credentials.async_load()
+    spotify.offline = True
+    await player.coordinator.async_refresh()
+    assert hass.states.get(state.entity_id).state == "unavailable"
+    assert await credentials.async_load() == saved
+    spotify.offline = False
+    await player.coordinator.async_refresh()
+    assert hass.states.get(state.entity_id).state == "playing"
+    assert await credentials.async_load() == saved
 
 
 async def test_reauth_rejects_different_spotify_account(hass, spotify):
