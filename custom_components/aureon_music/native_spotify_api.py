@@ -88,9 +88,12 @@ class NativeSpotifyApi:
 
     async def play(self, *, device_id: str | None = None, uri: str | None = None) -> Any:
         params = {"device_id": device_id} if device_id else None
-        payload = {"context_uri": uri} if uri and not uri.startswith("spotify:track:") else (
-            {"uris": [uri]} if uri else {}
-        )
+        if uri and not uri.startswith("spotify:"):
+            raise ValueError("Playback URI must be a Spotify URI")
+        if uri and uri.startswith(("spotify:track:", "spotify:episode:")):
+            payload = {"uris": [uri]}
+        else:
+            payload = {"context_uri": uri} if uri else {}
         return await self.request("PUT", "/me/player/play", params=params, json=payload)
 
     async def pause(self, *, device_id: str | None = None) -> Any:
