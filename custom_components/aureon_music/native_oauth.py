@@ -21,11 +21,12 @@ class SpotifyReauthorizationRequired(Exception):
 
 
 class NativeSpotifyTokenManager:
-    """Single-flight refresh with durable rotated-token storage.
+    """Serialize refresh and persist rotations before exposing their tokens.
 
-    A manager is scoped to one Spotify account. Create it with the token saved in
-    HA's config entry; pass a persistence callback that awaits storage completion.
-    A network failure propagates without discarding the saved refresh token.
+    If saving a rotated token fails or is cancelled, hold it in memory and
+    retry its save under the account lock on the next request. Never reuse the
+    old refresh token while a rotated one is pending. A process crash before
+    saving is still an unavoidable risk and is not claimed to be recoverable.
     """
 
     def __init__(
@@ -38,6 +39,7 @@ class NativeSpotifyTokenManager:
         refresh_margin: int = 120,
     ) -> None:
         self._token = dict(token)
+        self._pending: Token | None = None
         self._refresh = refresh
         self._save = save
         self._clock = clock
@@ -46,17 +48,37 @@ class NativeSpotifyTokenManager:
 
     @property
     def token(self) -> Token:
+        """Last confirmed persisted token (copy; pending credentials excluded)."""
         return dict(self._token)
 
-    async def access_token(\n        self, *, force_refresh: bool = False, rejected_access_token: str | None = None\n    ) -> str:
-        # A 401 may arrive from several concurrent requests using the same
-        # access token. Do not rotate repeatedly if another request refreshed it.
+    async def _persist_pending(self) -> None:
+        pending = self._pending
+        if pending is None:
+            return
+        # A failure or cancellation deliberately leaves _pending available
+        # for retry. Save callbacks must be idempotent for the same token.
+        await self._save(dict(pending))
+        self._token = pending
+        self._pending = None
+
+    async def access_token(
+        self, *, force_refresh: bool = False, rejected_access_token: str | None = None
+    ) -> str:
         async with self._lock:
+            # CRITICAL: retry saving before using credentials or refreshing.
+            # The previous refresh token may already have been invalidated.
+            await self._persist_pending()
             token = self._token
-            if (force_refresh and rejected_access_token is not None\n                    and token.get("access_token") != rejected_access_token):
+            if (
+                force_refresh
+                and rejected_access_token is not None
+                and token.get("access_token") != rejected_access_token
+            ):
                 return str(token["access_token"])
-            if not force_refresh and token.get("access_token") and (
-                float(token.get("expires_at") or 0) > self._clock() + self._margin
+            if (
+                not force_refresh
+                and token.get("access_token")
+                and float(token.get("expires_at") or 0) > self._clock() + self._margin
             ):
                 return str(token["access_token"])
 
@@ -64,23 +86,19 @@ class NativeSpotifyTokenManager:
             if not refresh_token:
                 raise SpotifyReauthorizationRequired("Spotify authorization is missing")
 
-            try:
-                refreshed = dict(await self._refresh(str(refresh_token)))
-            except SpotifyReauthorizationRequired:
-                raise
-            # Temporary HTTP, DNS and connection errors must not trigger reauth.
-            # The refresh callback must classify an explicit invalid_grant as
-            # SpotifyReauthorizationRequired.
+            # A transient failure leaves last persisted token untouched.
+            refreshed = dict(await self._refresh(str(refresh_token)))
             new_access = refreshed.get("access_token")
-            if not new_access:
+            if not isinstance(new_access, str) or not new_access:
                 raise ValueError("Spotify refresh returned no access token")
 
             merged = {**token, **refreshed}
-            # Spotify may omit refresh_token when it has not rotated.
             merged["refresh_token"] = refreshed.get("refresh_token") or refresh_token
             if "expires_at" not in refreshed:
                 merged["expires_at"] = self._clock() + float(refreshed.get("expires_in", 3600))
-            # Do not expose a new token until its rotated refresh token is saved.
-            await self._save(dict(merged))
-            self._token = merged
-            return str(new_access)
+
+            # Set before awaiting the save so failed/cancelled operations do
+            # not lose the rotated refresh token inside this process.
+            self._pending = merged
+            await self._persist_pending()
+            return new_access
