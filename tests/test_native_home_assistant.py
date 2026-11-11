@@ -35,6 +35,8 @@ class Response:
 class Spotify:
     def __init__(self):
         self.profile_id = "fixture-user"
+        self.access_token = "access"
+        self.refresh_token = "rotated"
         self.offline = False
         self.requests = []
         self.device = {
@@ -47,7 +49,11 @@ class Spotify:
         assert url == TOKEN_URL
         self.requests.append(("TOKEN", kwargs["data"]))
         return Response(
-            {"access_token": "access", "refresh_token": "rotated", "expires_in": 3600}
+            {
+                "access_token": self.access_token,
+                "refresh_token": self.refresh_token,
+                "expires_in": 3600,
+            }
         )
 
     def request(self, method, url, **kwargs):
@@ -288,3 +294,85 @@ async def test_reauth_rejects_different_spotify_account(hass, spotify):
     assert (await NativeTokenStore(hass, entry.data["credential_key"]).async_load())[
         "refresh_token"
     ] == "rotated"
+
+
+async def test_native_accounts_keep_credentials_and_commands_separate(hass, spotify):
+    async def connect(account):
+        spotify.profile_id = account
+        spotify.access_token = f"access-{account}"
+        spotify.refresh_token = f"refresh-{account}"
+        menu = await hass.config_entries.flow.async_init(
+            "aureon_music", context={"source": config_entries.SOURCE_USER}
+        )
+        form = await hass.config_entries.flow.async_configure(
+            menu["flow_id"], {"next_step_id": "native"}
+        )
+        external = await hass.config_entries.flow.async_configure(
+            form["flow_id"], {"client_id": "a" * 32}
+        )
+        _, result = await _complete(hass, external)
+        await hass.async_block_till_done()
+        return result
+
+    first = (await connect("fixture-first"))["result"]
+    second = (await connect("fixture-second"))["result"]
+    duplicate = await connect("fixture-second")
+    assert duplicate["type"] == "abort"
+    assert duplicate["reason"] == "already_configured"
+    assert first.data["credential_key"] != second.data["credential_key"]
+
+    accounts = (first, second)
+    stores = [
+        NativeTokenStore(hass, entry.data["credential_key"]) for entry in accounts
+    ]
+    assert [(await store.async_load())["refresh_token"] for store in stores] == [
+        "refresh-fixture-first",
+        "refresh-fixture-second",
+    ]
+
+    # The fixture deliberately gives both accounts the same display name.
+    entities = {
+        state.attributes["sp_user_id"]: state.entity_id
+        for state in hass.states.async_all("media_player")
+    }
+    assert len(set(entities.values())) == 2
+    for entry in accounts:
+        account = entry.data["spotify_user_id"]
+        await hass.services.async_call(
+            "aureon_music",
+            "native_write",
+            {
+                "entity_id": entities[account],
+                "action": "player_media_play_tracks",
+                "arguments": {"uris": "spotify:track:abc"},
+            },
+            blocking=True,
+        )
+    assert [
+        call[2]["headers"]["Authorization"]
+        for call in spotify.requests
+        if call[0] == "PUT" and call[1].endswith("/player/play")
+    ] == ["Bearer access-fixture-first", "Bearer access-fixture-second"]
+
+    spotify.profile_id = "fixture-first"
+    spotify.access_token = "access-first-renewed"
+    spotify.refresh_token = "refresh-first-renewed"
+    reauth = await hass.config_entries.flow.async_init(
+        "aureon_music",
+        context={"source": config_entries.SOURCE_REAUTH, "entry_id": first.entry_id},
+        data=first.data,
+    )
+    external = await hass.config_entries.flow.async_configure(reauth["flow_id"], {})
+    _, result = await _complete(hass, external)
+    assert result["reason"] == "reauth_successful"
+    await hass.async_block_till_done()
+    renewed = NativeTokenStore(hass, first.data["credential_key"])
+    assert (await renewed.async_load())["refresh_token"] == "refresh-first-renewed"
+    assert await stores[0].async_load() is None
+    assert (await stores[1].async_load())["refresh_token"] == "refresh-fixture-second"
+
+    await hass.config_entries.async_remove(first.entry_id)
+    await hass.async_block_till_done()
+    assert await renewed.async_load() is None
+    assert (await stores[1].async_load())["refresh_token"] == "refresh-fixture-second"
+    assert hass.states.get(entities["fixture-second"]).state == "playing"
