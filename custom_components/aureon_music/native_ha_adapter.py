@@ -1,7 +1,8 @@
-"""Home Assistant adapter for the isolated native Spotify OAuth foundation.
+"""Home Assistant storage adapter for *opt-in* native Spotify entries only.
 
-This module is intentionally not imported by the legacy config flow. It only
-accepts an explicitly native entry with a token mapping under 'token'.
+Legacy SpotifyPlus and Spotcast entries are never migrated by this helper.
+Rotated tokens are written to a private, atomic Home Assistant Store and loaded
+from that Store on startup. Config-entry updates alone are not durable.
 """
 from __future__ import annotations
 
@@ -11,38 +12,52 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .native_oauth import NativeSpotifyTokenManager
 from .native_spotify_api import NativeSpotifyApi
 from .native_spotify_oauth import SpotifyOAuthRefresher
 
 
-def create_native_spotify_client(
+async def async_create_native_spotify_client(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
     client_id: str,
     client_secret: str | None = None,
 ) -> NativeSpotifyApi:
-    """Create a client without modifying or migrating existing config entries.
+    """Load last persisted native credentials before allowing API operations.
 
-    This helper is reserved for a future explicitly native flow. SpotifyPlus
-    and Spotcast entries must never be passed here or rewritten automatically.
+    A separate Store is required because config-entry async_update_entry()
+    schedules, rather than awaits, the configuration save. Do not use it as a
+    token-rotation durability boundary. The initial native flow must still
+    commit its first token before activating this helper.
     """
     if entry.data.get("aureon_kind") != "native":
         raise ValueError("Only native AUREON Música entries are supported")
-    token = entry.data.get("token")
-    if not isinstance(token, Mapping):
+    initial = entry.data.get("token")
+    if not isinstance(initial, Mapping):
         raise ValueError("Native Spotify token is missing")
 
+    store = Store[dict[str, Any]](
+        hass,
+        1,
+        f"aureon_music.native_token_{entry.entry_id}",
+        private=True,
+        atomic_writes=True,
+    )
+    saved = await store.async_load()
+    if saved is not None and (
+        not isinstance(saved, Mapping) or not saved.get("refresh_token")
+    ):
+        raise ValueError("Saved native Spotify credentials are invalid")
+    token = saved if saved is not None else initial
     session = async_get_clientsession(hass)
 
     async def save(updated: dict[str, Any]) -> None:
-        # HA persists entry data through the config-entry manager.
-        # Never store token material in logs, diagnostics or options.
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, "token": updated}
-        )
+        # This awaited write is the authority for rotated credentials.
+        # Do not overwrite it with delayed config-entry persistence.
+        await store.async_save(dict(updated))
 
     tokens = NativeSpotifyTokenManager(
         token,
