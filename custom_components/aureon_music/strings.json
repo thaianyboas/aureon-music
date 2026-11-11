@@ -49,8 +49,20 @@
         "description": "How should AUREON Music talk to Spotify?",
         "menu_options": {
           "spotifyplus": "Spotify account: player, library and search (Spotify Web API)",
-          "spotcast": "Play on Cast / Alexa speakers (Spotify Connect)"
+          "spotcast": "Play on Cast / Alexa speakers (Spotify Connect)",
+          "native": "Spotify account (native, preview)"
         }
+      },
+      "native": {
+        "title": "Spotify account (native, preview)",
+        "description": "Enter your Spotify Developer app Client ID. Register the redirect URI shown by your Home Assistant before authorizing.",
+        "data": {
+          "client_id": "Spotify Client ID"
+        }
+      },
+      "native_reauth": {
+        "title": "Spotify account (native, preview)",
+        "description": "Sign in again with the same Spotify account."
       }
     },
     "abort": {
@@ -71,7 +83,11 @@
       "setauthtoken_error": "SpotifyClient authorization token could not be set from OAuth2 session token; please check the System Log for further information.",
       "user_rejected_authorize": "Account linking rejected: {error}",
       "invalid_credentials": "Spotify rejected the Client ID or Client Secret stored in Home Assistant. Delete them from [Application credentials]({credentials_url}) and start the setup again to enter new ones. See [the guide]({credentials_guide}) for details.",
-      "public_private_accounts_mismatch": "The profile from the OAuth credentials and the desktop credentials are for 2 different accounts. Make sure to provide information from the same account. If you are already logged in to Spotify on your browser, Home Assistant won't ask you to connect to a different account and will use the currently logged-in user."
+      "public_private_accounts_mismatch": "The profile from the OAuth credentials and the desktop credentials are for 2 different accounts. Make sure to provide information from the same account. If you are already logged in to Spotify on your browser, Home Assistant won't ask you to connect to a different account and will use the currently logged-in user.",
+      "wrong_account": "Sign in with the same Spotify account as before.",
+      "native_callback_unavailable": "The Home Assistant OAuth callback is unavailable.",
+      "native_storage_error": "The Spotify credentials could not be saved.",
+      "native_oauth_failed": "Spotify authorization failed. Check the app configuration and try again."
     },
     "create_entry": {
       "default": "Successfully authenticated with Spotify."

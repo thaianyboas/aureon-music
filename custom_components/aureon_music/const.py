@@ -4,6 +4,7 @@ DOMAIN = "aureon_music"
 CONF_KIND = "aureon_kind"
 KIND_PLUS = "spotifyplus"
 KIND_CAST = "spotcast"
+KIND_NATIVE = "native"
 
 
 def entry_kind(entry) -> str:

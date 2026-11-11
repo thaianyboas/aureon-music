@@ -17,13 +17,8 @@ MODULES = ROOT / "custom_components" / "aureon_music"
 
 
 def load_modules():
-    for filename in (
-        "native_oauth.py",
-        "native_spotify_oauth.py",
-        "native_spotify_api.py",
-        "native_ha_adapter.py",
-    ):
-        ast.parse((MODULES / filename).read_text(encoding="utf-8"), filename=filename)
+    for path in MODULES.glob("native_*.py"):
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for name, path in (
         ("custom_components", ROOT / "custom_components"),
         ("custom_components.aureon_music", MODULES),

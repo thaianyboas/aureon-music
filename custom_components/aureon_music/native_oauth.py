@@ -4,6 +4,7 @@ This module does not replace the currently installed provider or register HA ser
 Callers supply the official OAuth refresh operation and an awaited durable save operation.
 No secrets or tokens are logged.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -95,7 +96,9 @@ class NativeSpotifyTokenManager:
             merged = {**token, **refreshed}
             merged["refresh_token"] = refreshed.get("refresh_token") or refresh_token
             if "expires_at" not in refreshed:
-                merged["expires_at"] = self._clock() + float(refreshed.get("expires_in", 3600))
+                merged["expires_at"] = self._clock() + float(
+                    refreshed.get("expires_in", 3600)
+                )
 
             # Set before awaiting the save so failed/cancelled operations do
             # not lose the rotated refresh token inside this process.

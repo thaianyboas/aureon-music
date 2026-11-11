@@ -43,8 +43,20 @@
         "description": "Comment AUREON Musique doit-il parler à Spotify ?",
         "menu_options": {
           "spotifyplus": "Compte Spotify : lecteur, bibliothèque et recherche (Spotify Web API)",
-          "spotcast": "Lire sur les enceintes Cast / Alexa (Spotify Connect)"
+          "spotcast": "Lire sur les enceintes Cast / Alexa (Spotify Connect)",
+          "native": "Compte Spotify (natif, aperçu)"
         }
+      },
+      "native": {
+        "title": "Compte Spotify (natif, aperçu)",
+        "description": "Saisissez l’identifiant client de votre application Spotify Developer. Enregistrez l’URI de redirection de Home Assistant avant d’autoriser.",
+        "data": {
+          "client_id": "Identifiant client Spotify"
+        }
+      },
+      "native_reauth": {
+        "title": "Compte Spotify (natif, aperçu)",
+        "description": "Reconnectez-vous au même compte Spotify."
       }
     },
     "error": {
@@ -61,7 +73,11 @@
       "already_configured": "Ce compte est déjà configuré dans Home Assistant",
       "reauth_account_mismatch": "Le compte fourni ne concorde pas avec le compte Spotify étant réauthentifié",
       "public_private_accounts_mismatch": "Le profil lié aux informations d'identification OAuth et celui des informations d'identification du client de bureau sont pour des comptes différents. Faites attention à fournir les informations pour le même compte. Si vous êtes déjà connecté à Spotify dans votre navigateur web, Home Assistant ne vous demandera pas de vous connecter à un autre compte et utilisera le compte actuel.",
-      "reauth_successful": "La ré-authentification a réussi"
+      "reauth_successful": "La ré-authentification a réussi",
+      "wrong_account": "Connectez-vous avec le même compte Spotify qu’auparavant.",
+      "native_callback_unavailable": "Le rappel OAuth de Home Assistant est indisponible.",
+      "native_storage_error": "Les identifiants Spotify n’ont pas pu être enregistrés.",
+      "native_oauth_failed": "L’autorisation Spotify a échoué. Vérifiez la configuration de l’application et réessayez."
     }
   },
   "options": {

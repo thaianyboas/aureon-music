@@ -43,8 +43,20 @@
         "description": "Wie soll AUREON Musik mit Spotify sprechen?",
         "menu_options": {
           "spotifyplus": "Spotify-Konto: Player, Mediathek und Suche (Spotify Web API)",
-          "spotcast": "Auf Cast- / Alexa-Lautsprechern abspielen (Spotify Connect)"
+          "spotcast": "Auf Cast- / Alexa-Lautsprechern abspielen (Spotify Connect)",
+          "native": "Spotify-Konto (nativ, Vorschau)"
         }
+      },
+      "native": {
+        "title": "Spotify-Konto (nativ, Vorschau)",
+        "description": "Gib die Client-ID deiner Spotify-Developer-App ein. Registriere vor der Autorisierung die Redirect-URI deines Home Assistant.",
+        "data": {
+          "client_id": "Spotify-Client-ID"
+        }
+      },
+      "native_reauth": {
+        "title": "Spotify-Konto (nativ, Vorschau)",
+        "description": "Melde dich erneut mit demselben Spotify-Konto an."
       }
     },
     "error": {
@@ -61,7 +73,11 @@
       "already_configured": "Dieses Nutzerkonto ist bereits in Home Assistant konfiguriert.",
       "reauth_account_mismatch": "Das angegebene Konto ist nicht das, das aktualisiert werden soll.",
       "public_private_accounts_mismatch": "Das Konto der OAuth-Zugangsdaten ist ein anderes als das der Desktop-Daten. Stellen Sie sicher, dass die Informationen zu demselben Konto gehören. Wenn Sie in Ihrem Browser in Spotify angemeldet sind, wird Home Assistant nicht nach einer erneuten Anmeldung fragen und das bereits angemeldete Konto verwenden. Wenn Sie ein anderes Konto verbinden wollen, müssen Sie sich zunächst bei Spotify abmelden.",
-      "reauth_successful": "Erneute Authentifizierung erfolgreich."
+      "reauth_successful": "Erneute Authentifizierung erfolgreich.",
+      "wrong_account": "Melde dich mit demselben Spotify-Konto wie zuvor an.",
+      "native_callback_unavailable": "Der OAuth-Rückruf von Home Assistant ist nicht verfügbar.",
+      "native_storage_error": "Die Spotify-Zugangsdaten konnten nicht gespeichert werden.",
+      "native_oauth_failed": "Die Spotify-Autorisierung ist fehlgeschlagen. Prüfe die App-Konfiguration und versuche es erneut."
     }
   },
   "options": {

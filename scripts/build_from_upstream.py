@@ -130,11 +130,31 @@ def neutral_names(value, lang="en"):
     return value
 
 
+def preserve_native_resources(merged: dict, previous: dict) -> None:
+    """Keep first-party OAuth labels when regenerating vendored translations."""
+    current = merged.setdefault("config", {})
+    old = previous.get("config", {})
+    old_steps = old.get("step", {})
+    steps = current.setdefault("step", {})
+    for key in ("native", "native_reauth"):
+        if key in old_steps:
+            steps[key] = old_steps[key]
+    native = old_steps.get("user", {}).get("menu_options", {}).get("native")
+    if native:
+        # MENU is shared across strings and translations.
+        steps["user"] = {**steps["user"], "menu_options": {**steps["user"]["menu_options"], "native": native}}
+    old_abort = old.get("abort", {})
+    for key in ("wrong_account", "native_callback_unavailable", "native_storage_error", "native_oauth_failed"):
+        if key in old_abort:
+            current.setdefault("abort", {})[key] = old_abort[key]
+
+
 def merge_resources(out: Path, plus: Path, cast: Path):
     (out / "services.yaml").write_text("# SpotifyPlus part\n" + (plus / "services.yaml").read_text(encoding="utf-8") + "\n\n# Spotcast part\n" + (cast / "services.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     load = lambda p: json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     strings = deep_merge(load(plus / "strings.json"), load(cast / "strings.json"))
     strings.setdefault("config", {}).setdefault("step", {})["user"] = MENU["en"]
+    preserve_native_resources(strings, load(out / "strings.json"))
     strings = neutral_names(strings, "en")
     (out / "strings.json").write_text(json.dumps(strings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tr = out / "translations"
@@ -143,6 +163,7 @@ def merge_resources(out: Path, plus: Path, cast: Path):
         data = deep_merge(load(plus / "translations" / f"{lang}.json"), load(cast / "translations" / f"{lang}.json"))
         if lang in MENU:
             data.setdefault("config", {}).setdefault("step", {})["user"] = MENU[lang]
+        preserve_native_resources(data, load(tr / f"{lang}.json"))
         data = neutral_names(data, lang)
         if data:
             (tr / f"{lang}.json").write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

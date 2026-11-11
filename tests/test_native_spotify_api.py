@@ -1,7 +1,11 @@
 """Isolated transport tests; no Spotify account or live Home Assistant required."""
+
 import pytest
 
-from custom_components.aureon_music.native_spotify_api import NativeSpotifyApi, SpotifyApiError
+from custom_components.aureon_music.native_spotify_api import (
+    NativeSpotifyApi,
+    SpotifyApiError,
+)
 
 
 class Response:
@@ -85,11 +89,40 @@ async def test_accepted_no_content_is_success():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", [
-    "//evil.example", "/me?access_token=secret", "/me#fragment",
-    "/https://evil.example",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "//evil.example",
+        "/me?access_token=secret",
+        "/me#fragment",
+        "/https://evil.example",
+    ],
+)
 async def test_unsafe_paths_rejected(path):
     api = NativeSpotifyApi(Session(), Tokens())
     with pytest.raises(ValueError):
         await api.request("GET", path)
+
+
+@pytest.mark.asyncio
+async def test_read_retries_transient_server_failure_but_writes_do_not():
+    read = Session((503, None), (502, None), (200, {"id": "account"}))
+    assert await NativeSpotifyApi(read, Tokens()).profile() == {"id": "account"}
+    assert len(read.calls) == 3
+    write = Session((503, None), (204, None))
+    with pytest.raises(SpotifyApiError, match="503"):
+        await NativeSpotifyApi(write, Tokens()).next_track()
+    assert len(write.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_suspends_requests_for_the_account_only():
+    limited = Session((429, None), (200, {"id": "account"}))
+    independent = Session((200, {"id": "other"}))
+    client = NativeSpotifyApi(limited, Tokens())
+    with pytest.raises(SpotifyApiError, match="429"):
+        await client.profile()
+    with pytest.raises(SpotifyApiError, match="429"):
+        await client.pause()
+    assert len(limited.calls) == 1
+    assert await NativeSpotifyApi(independent, Tokens()).profile() == {"id": "other"}

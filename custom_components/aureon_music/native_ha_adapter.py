@@ -1,67 +1,101 @@
-"""Home Assistant storage adapter for *opt-in* native Spotify entries only.
+"""Account-scoped Spotify credentials with a checked atomic write."""
 
-Legacy SpotifyPlus and Spotcast entries are never migrated by this helper.
-Rotated tokens are written to a private, atomic Home Assistant Store and loaded
-from that Store on startup. Config-entry updates alone are not durable.
-"""
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import re
 from collections.abc import Mapping
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.storage import Store
 
-from .native_oauth import NativeSpotifyTokenManager
+from .native_oauth import NativeSpotifyTokenManager, SpotifyReauthorizationRequired
 from .native_spotify_api import NativeSpotifyApi
 from .native_spotify_oauth import SpotifyOAuthRefresher
 
 
-async def async_create_native_spotify_client(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    *,
-    client_id: str,
-    client_secret: str | None = None,
-) -> NativeSpotifyApi:
-    """Load last persisted native credentials before allowing API operations.
+class NativeTokenStore:
+    """Read and write the HA storage envelope without swallowing write failures."""
 
-    A separate Store is required because config-entry async_update_entry()
-    schedules, rather than awaits, the configuration save. Do not use it as a
-    token-rotation durability boundary. The initial native flow must still
-    commit its first token before activating this helper.
-    """
+    def __init__(self, hass: HomeAssistant, key: str) -> None:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", key):
+            raise ValueError("Invalid Spotify credential key")
+        self.hass = hass
+        self.key = f"aureon_music.native_token_{key}"
+        self.path = Path(hass.config.path(".storage", self.key))
+
+    async def async_load(self) -> dict[str, Any] | None:
+        return await self.hass.async_add_executor_job(self._load)
+
+    def _load(self) -> dict[str, Any] | None:
+        try:
+            stored = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (ValueError, UnicodeError):
+            raise OSError("Invalid Spotify credential storage") from None
+        if (
+            not isinstance(stored, dict)
+            or stored.get("version") != 1
+            or stored.get("key") != self.key
+            or not isinstance(stored.get("data"), dict)
+        ):
+            raise OSError("Invalid Spotify credential storage")
+        return stored["data"]
+
+    async def async_save(self, token: dict[str, Any]) -> None:
+        write = self.hass.async_add_executor_job(self._save, token)
+        try:
+            await asyncio.shield(write)
+        except asyncio.CancelledError:
+            # Hold the token manager lock until the executor finishes replacing
+            # the file, so a cancelled write cannot later overwrite a newer one.
+            await asyncio.shield(write)
+            raise
+
+    def _save(self, token: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=self.path.parent, delete=False
+        ) as temporary:
+            path = Path(temporary.name)
+            try:
+                json.dump(
+                    {"version": 1, "minor_version": 1, "key": self.key, "data": token},
+                    temporary,
+                )
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                temporary.close()
+                path.replace(self.path)
+            finally:
+                path.unlink(missing_ok=True)
+
+    async def async_remove(self) -> None:
+        await self.hass.async_add_executor_job(self.path.unlink, True)
+
+
+async def async_create_native_spotify_client(
+    hass: HomeAssistant, entry: ConfigEntry, *, client_id: str
+) -> NativeSpotifyApi:
+    """Load credentials for an explicitly native entry."""
     if entry.data.get("aureon_kind") != "native":
         raise ValueError("Only native AUREON Música entries are supported")
-    initial = entry.data.get("token")
-    if not isinstance(initial, Mapping):
-        raise ValueError("Native Spotify token is missing")
-
-    store = Store[dict[str, Any]](
-        hass,
-        1,
-        f"aureon_music.native_token_{entry.entry_id}",
-        private=True,
-        atomic_writes=True,
-    )
-    saved = await store.async_load()
-    if saved is not None and (
-        not isinstance(saved, Mapping) or not saved.get("refresh_token")
-    ):
-        raise ValueError("Saved native Spotify credentials are invalid")
-    token = saved if saved is not None else initial
+    store = NativeTokenStore(hass, entry.data.get("credential_key", entry.entry_id))
+    token = await store.async_load()
+    if token is None and isinstance(entry.data.get("token"), Mapping):
+        token = dict(entry.data["token"])
+        await store.async_save(token)
+    if not token or not token.get("refresh_token"):
+        raise SpotifyReauthorizationRequired("Spotify authorization is missing")
     session = async_get_clientsession(hass)
-
-    async def save(updated: dict[str, Any]) -> None:
-        # This awaited write is the authority for rotated credentials.
-        # Do not overwrite it with delayed config-entry persistence.
-        await store.async_save(dict(updated))
-
     tokens = NativeSpotifyTokenManager(
-        token,
-        SpotifyOAuthRefresher(session, client_id, client_secret),
-        save,
+        token, SpotifyOAuthRefresher(session, client_id), store.async_save
     )
     return NativeSpotifyApi(session, tokens)

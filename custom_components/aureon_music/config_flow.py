@@ -8,7 +8,8 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.core import callback
 
-from .const import CONF_KIND, DOMAIN, KIND_CAST, KIND_PLUS
+from .const import CONF_KIND, DOMAIN, KIND_CAST, KIND_NATIVE, KIND_PLUS
+from .native_config_flow import NativeSpotifyFlow
 from .spotcast_core.config_flow_classes.config_flow_handler import SpotcastFlowHandler
 from .spotcast_core.config_flow_classes.options_flow_handler import SpotcastOptionsFlowHandler
 from .spotifyplus_core.config_flow import AureonMusicConfigFlow as SpotifyPlusFlow
@@ -48,7 +49,11 @@ class AureonMusicFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self.__dict__.update(state)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="user", menu_options=[KIND_PLUS, KIND_CAST])
+        return self.async_show_menu(step_id="user", menu_options=[KIND_NATIVE, KIND_PLUS, KIND_CAST])
+
+    async def async_step_native(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        self._become(NativeSpotifyFlow)
+        return await self.async_step_native(user_input)
 
     async def async_step_spotifyplus(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._become(PlusFlow)
@@ -59,6 +64,9 @@ class AureonMusicFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user()
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        if entry_data.get(CONF_KIND) == KIND_NATIVE:
+            self._become(NativeSpotifyFlow)
+            return await self.async_step_native_reauth()
         self._become(CastFlow if entry_data.get(CONF_KIND) == KIND_CAST else PlusFlow)
         step = getattr(self, "async_step_reauth", None)
         if step is not None:
@@ -68,6 +76,8 @@ class AureonMusicFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry):
+        if config_entry.data.get(CONF_KIND) == KIND_NATIVE:
+            return None
         if config_entry.data.get(CONF_KIND) == KIND_CAST:
             return SpotcastFlowHandler.async_get_options_flow(config_entry)
         return SpotifyPlusFlow.async_get_options_flow(config_entry)

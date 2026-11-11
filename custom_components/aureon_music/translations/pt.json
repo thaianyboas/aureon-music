@@ -6,9 +6,27 @@
         "description": "Como o AUREON Música deve falar com o Spotify?",
         "menu_options": {
           "spotifyplus": "Conta do Spotify: player, biblioteca e busca (Spotify Web API)",
-          "spotcast": "Tocar em caixas Cast / Alexa (Spotify Connect)"
+          "spotcast": "Tocar em caixas Cast / Alexa (Spotify Connect)",
+          "native": "Conta Spotify (nativa, prévia)"
         }
+      },
+      "native": {
+        "title": "Conta Spotify (nativa, prévia)",
+        "description": "Informe o Client ID do seu app no Spotify Developer. Cadastre o endereço de redirecionamento do seu Home Assistant antes de autorizar.",
+        "data": {
+          "client_id": "Client ID do Spotify"
+        }
+      },
+      "native_reauth": {
+        "title": "Conta Spotify (nativa, prévia)",
+        "description": "Entre novamente com a mesma conta Spotify."
       }
+    },
+    "abort": {
+      "wrong_account": "Entre com a mesma conta Spotify usada anteriormente.",
+      "native_callback_unavailable": "O retorno OAuth do Home Assistant está indisponível.",
+      "native_storage_error": "Não foi possível salvar as credenciais do Spotify.",
+      "native_oauth_failed": "A autorização do Spotify falhou. Confira a configuração do app e tente novamente."
     }
   }
 }
