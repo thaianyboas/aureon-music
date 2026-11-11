@@ -49,8 +49,13 @@ class NativeSpotifyTokenManager:
         return dict(self._token)
 
     async def access_token(self, *, force_refresh: bool = False) -> str:
+        # A 401 may arrive from several concurrent requests using the same
+        # access token. Do not rotate repeatedly if another request refreshed it.
+        observed_access = self._token.get("access_token")
         async with self._lock:
             token = self._token
+            if force_refresh and token.get("access_token") != observed_access:
+                return str(token["access_token"])
             if not force_refresh and token.get("access_token") and (
                 float(token.get("expires_at") or 0) > self._clock() + self._margin
             ):
