@@ -26,6 +26,9 @@ O menu **Conta Spotify (nativa, prévia)** cria uma entrada separada e usa a Spo
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. Esta prévia ainda não é a versão final
 para instalação pelo HACS.
 
+O mínimo do pacote atual é Home Assistant 2025.4.0. O Cast do HA 2025.1 a 2025.3 fixa uma versão do
+PyChromecast abaixo da exigida pela biblioteca legada que ainda acompanha o pacote.
+
 Em um Home Assistant descartável, use o **Client ID** do seu app Spotify Developer. Com My Home Assistant habilitado,
 cadastre `https://my.home-assistant.io/redirect/oauth` no app. Sem My Home Assistant, cadastre o endereço HTTPS
 exato do seu Home Assistant seguido de `/auth/external/callback`. Autorize a conta no Spotify quando o Home Assistant
