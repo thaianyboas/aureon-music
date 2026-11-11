@@ -5,10 +5,8 @@ Home Assistant service yet: the existing playback path remains untouched.
 """
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote
 
 from .native_oauth import NativeSpotifyTokenManager
 
@@ -56,7 +54,7 @@ class NativeSpotifyApi:
                     return None
                 if response.status >= 400:
                     # Do not log response headers, access tokens or user content.
-                    raise SpotifyApiError(response.status, await response.text())
+                    raise SpotifyApiError(response.status)
                 return await response.json(content_type=None)
         raise SpotifyApiError(401, "Spotify authorization rejected")
 
