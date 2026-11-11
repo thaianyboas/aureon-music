@@ -76,3 +76,20 @@ async def test_invalid_path_and_uri_are_rejected():
         await api.request("GET", "//evil.example")
     with pytest.raises(ValueError):
         await api.play(uri="https://evil.example")
+
+
+@pytest.mark.asyncio
+async def test_accepted_no_content_is_success():
+    api = NativeSpotifyApi(Session((202, None)), Tokens())
+    assert await api.pause() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", [
+    "//evil.example", "/me?access_token=secret", "/me#fragment",
+    "/https://evil.example",
+])
+async def test_unsafe_paths_rejected(path):
+    api = NativeSpotifyApi(Session(), Tokens())
+    with pytest.raises(ValueError):
+        await api.request("GET", path)
