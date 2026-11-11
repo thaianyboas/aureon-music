@@ -9,9 +9,12 @@ integration is changed, by text rules listed below (so an upstream update can be
     each keeps its own hass.data key; their config flows are no longer registered on their own
     (the AUREON flow lets the owner pick "Spotify account" or "Spotcast").
 
+AUREON fixes on top of the upstream code live as patches in scripts/patches/ and are applied last, in name order
+(e.g. spotifyplus-token-rotation.patch: refreshed Spotify tokens are stored before the next refresh).
+
 Usage: build_from_upstream.py <spotifyplus custom_components/spotifyplus> <spotcast custom_components/spotcast> <out dir>
 """
-import json, re, shutil, sys
+import json, re, shutil, subprocess, sys
 from pathlib import Path
 
 DOMAIN = "aureon_music"
@@ -85,6 +88,14 @@ def main(plus_src: str, cast_src: str, out: str):
     m1 = json.loads((Path(plus_src) / "manifest.json").read_text())
     m2 = json.loads((Path(cast_src) / "manifest.json").read_text())
     (out / "UPSTREAM.json").write_text(json.dumps({"spotifyplus": m1["version"], "spotcast": m2["version"]}, indent=2) + "\n")
+    apply_patches(out)
+
+
+def apply_patches(out: Path):
+    """AUREON fixes (scripts/patches/*.patch, paths relative to the integration folder). A patch that no longer
+    applies stops the build, so a fix is never lost silently."""
+    for patch in sorted((Path(__file__).parent / "patches").glob("*.patch")):
+        subprocess.run(["patch", "-p1", "--forward", "--batch", "--no-backup-if-mismatch", "-i", str(patch)], cwd=out, check=True)
 
 
 def deep_merge(a, b):

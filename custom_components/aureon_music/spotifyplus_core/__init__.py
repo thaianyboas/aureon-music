@@ -9,6 +9,7 @@ from asyncio import run_coroutine_threadsafe
 from urllib3._version import __version__ as urllib3_version
 
 import functools
+from aiohttp import ClientResponseError
 import json
 import logging
 import os
@@ -3845,6 +3846,28 @@ async def async_setup_entry(hass:HomeAssistant, entry:ConfigEntry) -> bool:
         # -----------------------------------------------------------------------------------
         # Define OAuth2 Session Token Updater.
         # -----------------------------------------------------------------------------------
+        def _aureon_refused(ex:BaseException) -> bool:
+            """True when Spotify really refused the refresh token (not a network or server hiccup)."""
+            if "invalid_grant" in str(ex).lower() or isinstance(ex, ConfigEntryAuthFailed):
+                return True
+            return isinstance(ex, ClientResponseError) and ex.status in (400, 401)
+
+        def _aureon_refresh(old_token:dict) -> dict:
+            """Refresh a token through HA's OAuth2 implementation (called from a worker thread)."""
+            return run_coroutine_threadsafe(
+                session.implementation.async_refresh_token(old_token),
+                hass.loop
+            ).result(timeout=60)
+
+        def _aureon_store(token:dict) -> None:
+            """Store a refreshed token in the config entry and wait until it is stored (called from a worker thread)."""
+            async def _store() -> None:
+                hass.config_entries.async_update_entry(
+                    session.config_entry,
+                    data={**session.config_entry.data, "token": token}
+                )
+            run_coroutine_threadsafe(_store(), hass.loop).result(timeout=30)
+
         def _TokenUpdater() -> dict:
             """
             Callback function that will inform HA OAuth2 that a token needs to be refreshed.
@@ -3929,29 +3952,36 @@ async def async_setup_entry(hass:HomeAssistant, entry:ConfigEntry) -> bool:
                     # the `session.token` value) in case the token was refreshed in the `update` method.
                     # note - the `session.token` value will not change until AFTER `async_update_entry` is processed!
 
-                    # refresh the session token. 
+                    # refresh the session token.
+                    # AUREON: Spotify may hand out a NEW refresh token on every refresh and then reject the old one
+                    # ("invalid_grant"). The original code stored the new token later via `add_job`, so a second
+                    # thread waiting on this lock could still read the old, already used refresh token, get
+                    # "invalid_grant" and start a needless re-authentication (seen several times a day).
+                    # Now: the refreshed token is stored before the lock is released, and an "invalid_grant" is only
+                    # final after one retry with the newest stored token (like Dreame, which only asks the user
+                    # again when its stored credentials are really refused).
                     _logsi.LogVerbose("'%s': Component is calling async_refresh_token to refresh the session token" % entry.title, colorValue=SIColors.Gold)
-                    token = run_coroutine_threadsafe(
-                        session.implementation.async_refresh_token(session.config_entry.data['token']), 
-                        hass.loop
-                    ).result()
+                    used_token:dict = dict(session.config_entry.data['token'])
+                    try:
+                        token = _aureon_refresh(used_token)
+                    except Exception as refresh_ex:
+                        if not _aureon_refused(refresh_ex):
+                            raise
+                        latest:dict = dict(session.config_entry.data['token'])
+                        if not latest.get('refresh_token') or latest.get('refresh_token') == used_token.get('refresh_token'):
+                            raise
+                        _logsi.LogWarning("'%s': Spotify refused an older refresh token; retrying once with the newest stored token" % entry.title, colorValue=SIColors.Gold)
+                        if not SpotifyAuthToken("TokenRefreshAuthType", "TokenRefreshProfileId", root=latest).IsExpired:
+                            return latest
+                        token = _aureon_refresh(latest)
 
                     # store token event details in our runtime data area.
                     data.runtime_data[TOKEN_STATUS] = TOKEN_STATUS_REFRESH_EVENT
 
-                    # update token value in configuration entry data.
-                    # updating a config entry must be done in the event loop thread, as there is no sync API to update config entries!
-                    # the "hass.add_job" method is used to schedule a function in the event loop that calls hass.config_entries.async_update_entry.
-                    _logsi.LogDictionary(SILevel.Verbose, "'%s': Component is submitting add_job to call async_update_entry to update configuration entry data with refreshed token" % entry.title, token, prettyPrint=True, colorValue=SIColors.Gold)
-                    hass.add_job(
-                        functools.partial(
-                            hass.config_entries.async_update_entry,
-                            session.config_entry, 
-                            data={**session.config_entry.data, 
-                                  "token": token
-                            }
-                        )
-                    )
+                    # update token value in configuration entry data, and WAIT until it is stored, so that the
+                    # next refresh (by any thread) uses the new refresh token.
+                    _logsi.LogDictionary(SILevel.Verbose, "'%s': Component is storing the refreshed token in the configuration entry" % entry.title, token, prettyPrint=True, colorValue=SIColors.Gold)
+                    _aureon_store(token)
                 
                     # trace.
                     _logsi.LogVerbose("'%s': Component OAuth2 session token refresh complete" % entry.title, colorValue=SIColors.Gold)
@@ -3965,7 +3995,9 @@ async def async_setup_entry(hass:HomeAssistant, entry:ConfigEntry) -> bool:
 
                     # check for invalid grant error, as Spotify will deactivate refresh tokens
                     # after a 6 month period (starting 2026/07/20).
-                    if "invalid_grant" in str(ex).lower():
+                    # AUREON: newer Home Assistant versions report a refused refresh as OAuth2TokenRequestReauthError
+                    # (no "invalid_grant" text), so all refusals are recognised here.
+                    if _aureon_refused(ex):
 
                         # trace.
                         _logsi.LogWarning("The AureonMusic authorization refresh token for user name \"%s\" (OAuth client id \"%s\") has expired due to Spotify regulations. Please re-authenticate to Spotify for this account via the \"Settings \\ Devices & Services\" UI, using the discovered \"AureonMusic Reconfigure\" option" % (reauth_account_name, reauth_client_id), colorValue=SIColors.Gold)
