@@ -34,7 +34,7 @@ class NativeSpotifyApi:
         params: Mapping[str, Any] | None = None,
         json: Any = None,
     ) -> Any:
-        if not path.startswith("/") or path.startswith("//"):
+        if (not path.startswith("/") or path.startswith("//")\n                or "://" in path or "?" in path or "#" in path):
             raise ValueError("Spotify API path must begin with a single slash")
         method = method.upper()
         if method not in {"GET", "POST", "PUT", "DELETE"}:
@@ -52,7 +52,7 @@ class NativeSpotifyApi:
                 if response.status == 401 and attempt == 0:
                     rejected_access = access
                     continue
-                if response.status == 204:
+                if response.status in (202, 204):
                     return None
                 if response.status >= 400:
                     # Do not log response headers, access tokens or user content.
