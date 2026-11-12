@@ -93,6 +93,7 @@
       "default": "Successfully authenticated with Spotify."
     },
     "error": {
+      "invalid_client_id": "Enter the 32-character Client ID from Spotify Developer.",
       "must_confirm": "You must confirm before proceeding.",
       "invalid_url": "That does not look like a valid redirect URL. Copy the full address from your browser's address bar.",
       "access_denied": "Authorization was denied. Open the link again and allow access.",

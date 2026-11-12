@@ -96,15 +96,18 @@ class NativeSpotifyFlow(AbstractOAuth2FlowHandler):
         return logging.getLogger(__name__)
 
     async def async_step_native(self, user_input=None):
-        if user_input is None:
-            return self.async_show_form(
-                step_id="native",
-                data_schema=vol.Schema(
-                    {vol.Required("client_id"): vol.Match(r"^[a-fA-F0-9]{32}$")}
-                ),
-            )
-        self.flow_impl = SpotifyPKCE(self.hass, user_input["client_id"])
-        return await self._async_begin()
+        errors = {}
+        if user_input is not None:
+            client_id = user_input["client_id"].strip()
+            if re.fullmatch(r"[a-fA-F0-9]{32}", client_id):
+                self.flow_impl = SpotifyPKCE(self.hass, client_id)
+                return await self._async_begin()
+            errors["client_id"] = "invalid_client_id"
+        return self.async_show_form(
+            step_id="native",
+            data_schema=vol.Schema({vol.Required("client_id"): str}),
+            errors=errors,
+        )
 
     async def async_step_native_reauth(self, user_input=None):
         if user_input is None:

@@ -60,6 +60,7 @@
       }
     },
     "error": {
+      "invalid_client_id": "Gib die 32 Zeichen lange Client-ID aus Spotify Developer ein.",
       "must_confirm": "Bestätigung erforderlich.",
       "invalid_url": "Unerwartetes Format der Weiterleitungs-URL. Kopieren Sie die vollständige URL aus der Adresszeile des Browsers.",
       "access_denied": "Zugriff verweigert. Öffnen Sie den Link erneut um neue Autorisierungscodes zu generieren.",

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from homeassistant import config_entries
+from homeassistant.components.config.config_entries import ConfigManagerFlowIndexView
 from homeassistant.core import Context
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers.config_entry_oauth2_flow import _decode_jwt
@@ -155,6 +156,16 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     )
     assert flow["type"] == "form"
     assert flow["step_id"] == "native"
+    visible = ConfigManagerFlowIndexView(hass.config_entries.flow)._prepare_result_json(
+        flow
+    )
+    assert visible["data_schema"][0]["type"] == "string"
+    invalid = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"client_id": "not-a-client-id"}
+    )
+    assert invalid["type"] == "form"
+    assert invalid["errors"] == {"client_id": "invalid_client_id"}
+
     external = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"client_id": "a" * 32}
     )

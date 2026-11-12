@@ -143,6 +143,8 @@ def preserve_native_resources(merged: dict, previous: dict) -> None:
     if native:
         # MENU is shared across strings and translations.
         steps["user"] = {**steps["user"], "menu_options": {**steps["user"]["menu_options"], "native": native}}
+    if "invalid_client_id" in old.get("error", {}):
+        current.setdefault("error", {})["invalid_client_id"] = old["error"]["invalid_client_id"]
     old_abort = old.get("abort", {})
     for key in ("wrong_account", "native_callback_unavailable", "native_storage_error", "native_oauth_failed"):
         if key in old_abort:

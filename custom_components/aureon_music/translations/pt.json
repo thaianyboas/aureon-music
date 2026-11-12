@@ -22,6 +22,9 @@
         "description": "Entre novamente com a mesma conta Spotify."
       }
     },
+    "error": {
+      "invalid_client_id": "Informe o Client ID de 32 caracteres do Spotify Developer."
+    },
     "abort": {
       "wrong_account": "Entre com a mesma conta Spotify usada anteriormente.",
       "native_callback_unavailable": "O retorno OAuth do Home Assistant está indisponível.",
