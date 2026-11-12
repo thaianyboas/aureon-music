@@ -299,6 +299,22 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     assert play[2]["params"] == {"device_id": "speaker-1"}
     assert play[2]["json"] == {"uris": ["spotify:track:recent"]}
 
+    # Spotify Connect may change the ID after the group reconnects.
+    spotify.device = {**spotify.device, "id": "speaker-reconnected"}
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    play = next(call for call in spotify.requests if call[0] == "PUT")
+    assert play[2]["params"] == {"device_id": "speaker-reconnected"}
+
+    # Playback started on the phone is visible before the next coordinator poll.
+    spotify.device["is_active"] = True
+    spotify.idle = False
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    play = next(call for call in spotify.requests if call[0] == "PUT")
+    assert play[2]["params"] is None
+    assert play[2]["json"] == {}
+
 
 async def test_reauth_rejects_different_spotify_account(hass, spotify):
     entry = MockConfigEntry(

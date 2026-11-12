@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b5
+## Motor nativo — prévia HACS 1.1.0b6
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch

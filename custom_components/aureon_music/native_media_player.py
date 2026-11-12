@@ -184,7 +184,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_media_play(self):
-        playback = self.coordinator.data or {}
+        playback = await self._call(self.api.playback) or {}
         if playback.get("is_playing") or playback.get("item"):
             await self.async_play_spotify()
             return
@@ -235,7 +235,24 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.async_play_spotify(media_id)
 
     async def async_play_spotify(self, uri=None):
-        device_id = self._pending_device["id"] if self._pending_device else None
+        device_id = None
+        if selected := self._pending_device:
+            devices = await self.async_discover_devices()
+            device = next(
+                (entry for entry in devices if entry["id"] == selected["id"]), None
+            )
+            if device is None:
+                matches = [
+                    entry for entry in devices if entry["name"] == selected["name"]
+                ]
+                if len(matches) != 1:
+                    raise ServiceValidationError(
+                        "Selected Spotify speaker is unavailable. Choose the speaker again."
+                    )
+                device = matches[0]
+            self._pending_device = device
+            if not device.get("is_active"):
+                device_id = device["id"]
         await self._control(self.api.play, uri=uri, device_id=device_id)
 
     async def async_select_source(self, source):
