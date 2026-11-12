@@ -48,7 +48,7 @@
         }
       },
       "native": {
-        "title": "Compte Spotify (natif, aperçu)",
+        "title": "Connecter Spotify",
         "description": "Saisissez l’identifiant client de votre application Spotify Developer. Enregistrez l’URI de redirection de Home Assistant avant d’autoriser.",
         "data": {
           "client_id": "Identifiant client Spotify"

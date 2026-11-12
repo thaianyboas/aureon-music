@@ -54,7 +54,7 @@
         }
       },
       "native": {
-        "title": "Spotify account (native, preview)",
+        "title": "Connect Spotify",
         "description": "Enter your Spotify Developer app Client ID. Register the redirect URI shown by your Home Assistant before authorizing.",
         "data": {
           "client_id": "Spotify Client ID"

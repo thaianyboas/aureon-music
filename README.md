@@ -7,11 +7,10 @@ it automatically; the original SpotifyPlus and Spotcast integrations are no long
 
 1. HACS → ⋮ → **Repositórios personalizados** → `https://github.com/thaianyboas/aureon-music`, tipo **Integração**.
 2. Baixe **AUREON Música** e **reinicie** o Home Assistant.
-3. Configurações → Dispositivos e serviços → **Adicionar integração** → **AUREON Música**:
-   - **Conta do Spotify (SpotifyPlus)** — informe o *Client ID* e *Client Secret* do seu app Spotify Developer
-     (os mesmos de antes) e faça login no Spotify;
-   - **Tocar Spotify em caixas Cast / Alexa (Spotcast)** — siga os passos da tela (login do Spotify).
-4. Confira se o player toca no AUREON. Só então remova SpotifyPlus e Spotcast originais (HACS e integrações).
+3. Configurações → Dispositivos e serviços → **Adicionar integração** → **AUREON Música**.
+4. No formulário **Conectar ao Spotify**, informe o Client ID e autorize sua conta na tela do Spotify.
+5. Em **AUREON → Música → Configurações**, selecione sua conta. Use a lista de alto-falantes para escolher
+   um dispositivo disponibilizado pelo Spotify Connect.
 
 No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.io/redirect/oauth`.
 
@@ -20,16 +19,16 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b1
+## Motor nativo — prévia HACS 1.1.0b2
 
-O menu **Conta Spotify (nativa, prévia)** cria uma entrada separada e usa a Spotify Web API com OAuth/PKCE.
+O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
 `master` para testar com uma conta Spotify real e dispositivos físicos.
 
 1. Faça um backup do Home Assistant.
 2. No HACS, abra **AUREON Música**. Atualize as informações do repositório e use **Baixar novamente**. Se o
    HACS oferecer uma seleção de versão, escolha `master`.
-3. Reinicie o Home Assistant e adicione uma **Conta Spotify (nativa, prévia)** sem excluir sua conta anterior.
+3. Reinicie o Home Assistant e adicione **AUREON Música** para abrir diretamente o formulário **Conectar ao Spotify**. Mantenha sua conta anterior durante o teste.
 4. Se o menu de Música do AUREON Dashboard não oferecer a conta nativa, atualize também o **AUREON Dashboard**
    pelo HACS e recarregue a página. O bundle da `master` já inclui o suporte à conta nativa.
 

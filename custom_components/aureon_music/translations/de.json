@@ -48,7 +48,7 @@
         }
       },
       "native": {
-        "title": "Spotify-Konto (nativ, Vorschau)",
+        "title": "Spotify verbinden",
         "description": "Gib die Client-ID deiner Spotify-Developer-App ein. Registriere vor der Autorisierung die Redirect-URI deines Home Assistant.",
         "data": {
           "client_id": "Spotify-Client-ID"

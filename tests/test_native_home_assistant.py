@@ -153,10 +153,8 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     flow = await hass.config_entries.flow.async_init(
         "aureon_music", context={"source": config_entries.SOURCE_USER}
     )
-    assert "native" in flow["menu_options"]
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"next_step_id": "native"}
-    )
+    assert flow["type"] == "form"
+    assert flow["step_id"] == "native"
     external = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"client_id": "a" * 32}
     )
@@ -301,11 +299,8 @@ async def test_native_accounts_keep_credentials_and_commands_separate(hass, spot
         spotify.profile_id = account
         spotify.access_token = f"access-{account}"
         spotify.refresh_token = f"refresh-{account}"
-        menu = await hass.config_entries.flow.async_init(
+        form = await hass.config_entries.flow.async_init(
             "aureon_music", context={"source": config_entries.SOURCE_USER}
-        )
-        form = await hass.config_entries.flow.async_configure(
-            menu["flow_id"], {"next_step_id": "native"}
         )
         external = await hass.config_entries.flow.async_configure(
             form["flow_id"], {"client_id": "a" * 32}

@@ -1,4 +1,4 @@
-"""Config flow: the owner picks what to add, then the original SpotifyPlus or Spotcast flow runs unchanged."""
+"""Set up native Spotify accounts and reauthenticate existing entries."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -18,7 +18,7 @@ from .spotifyplus_core.config_flow import AureonMusicOptionsFlow as SpotifyPlusO
 
 def _with_kind(base, kind: str):
     """A subclass of an original flow whose entries remember which part of AUREON Música they belong to.
-    Defined without a mixin so the class keeps the same object layout (the menu flow switches into it)."""
+    Defined without a mixin to preserve the object layout when switching flows."""
 
     def async_create_entry(self, *, data: Mapping[str, Any] | None = None, **kwargs):
         return base.async_create_entry(self, data={**(data or {}), CONF_KIND: kind}, **kwargs)
@@ -37,7 +37,7 @@ CastFlow = _with_kind(SpotcastFlowHandler, KIND_CAST)
 
 
 class AureonMusicFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
-    """First step: a menu. Choosing an option turns this flow into the original flow of that part."""
+    """Start native setup directly and retain reauthentication for existing entries."""
 
     VERSION = 2
     MINOR_VERSION = 1
@@ -49,19 +49,8 @@ class AureonMusicFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self.__dict__.update(state)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="user", menu_options=[KIND_NATIVE, KIND_PLUS, KIND_CAST])
-
-    async def async_step_native(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._become(NativeSpotifyFlow)
         return await self.async_step_native(user_input)
-
-    async def async_step_spotifyplus(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        self._become(PlusFlow)
-        return await self.async_step_user()
-
-    async def async_step_spotcast(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        self._become(CastFlow)
-        return await self.async_step_user()
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         if entry_data.get(CONF_KIND) == KIND_NATIVE:

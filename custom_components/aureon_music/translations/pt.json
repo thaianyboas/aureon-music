@@ -11,7 +11,7 @@
         }
       },
       "native": {
-        "title": "Conta Spotify (nativa, prévia)",
+        "title": "Conectar ao Spotify",
         "description": "Informe o Client ID do seu app no Spotify Developer. Cadastre o endereço de redirecionamento do seu Home Assistant antes de autorizar.",
         "data": {
           "client_id": "Client ID do Spotify"
