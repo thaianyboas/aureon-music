@@ -86,6 +86,8 @@ class Spotify:
             )
         if method == "PUT" and url.endswith("/player") and self.idle:
             return Response(None, 404)
+        if url.endswith("/player/recently-played"):
+            return Response({"items": [{"track": {"uri": "spotify:track:recent"}}]})
         if url.endswith("/library/contains"):
             return Response([True])
         return Response(None, 204)
@@ -291,6 +293,11 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     assert play[1].endswith("/player/play")
     assert play[2]["params"] == {"device_id": "speaker-1"}
     assert play[2]["json"] == {"uris": ["spotify:track:abc"]}
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    play = next(call for call in spotify.requests if call[0] == "PUT")
+    assert play[2]["params"] == {"device_id": "speaker-1"}
+    assert play[2]["json"] == {"uris": ["spotify:track:recent"]}
 
 
 async def test_reauth_rejects_different_spotify_account(hass, spotify):

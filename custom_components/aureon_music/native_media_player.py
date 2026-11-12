@@ -184,7 +184,18 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_media_play(self):
-        await self.async_play_spotify()
+        playback = self.coordinator.data or {}
+        if playback.get("is_playing") or playback.get("item"):
+            await self.async_play_spotify()
+            return
+        recent = await self._call(
+            self.api.request, "GET", "/me/player/recently-played", params={"limit": 1}
+        )
+        items = (recent or {}).get("items", [])
+        uri = (items[0].get("track") or {}).get("uri") if items else None
+        if not uri:
+            raise ServiceValidationError("Choose a song or playlist to start Spotify")
+        await self.async_play_spotify(uri)
 
     async def async_media_pause(self):
         await self._control(self.api.pause)
