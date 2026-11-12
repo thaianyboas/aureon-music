@@ -98,7 +98,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             "sp_user_display_name": self._attr_name,
             "aureon_music_native": True,
         }
-        self._devices = {}
+        self._pending_device = None
         self._apply_state()
 
     def _apply_state(self):
@@ -137,7 +137,15 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             "context": RepeatMode.ALL,
             "off": RepeatMode.OFF,
         }.get(playback.get("repeat_state"))
-        self._attr_source = device.get("name")
+        if (
+            self._pending_device
+            and device.get("id") == self._pending_device["id"]
+            and (playback.get("is_playing") or playback.get("item"))
+        ):
+            self._pending_device = None
+        self._attr_source = (
+            self._pending_device["name"] if self._pending_device else device.get("name")
+        )
         volume = device.get("volume_percent")
         self._attr_volume_level = volume / 100 if volume is not None else None
         self._attr_supported_features = self._features
@@ -176,7 +184,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_media_play(self):
-        await self._control(self.api.play)
+        await self.async_play_spotify()
 
     async def async_media_pause(self):
         await self._control(self.api.pause)
@@ -213,13 +221,31 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             raise ServiceValidationError(
                 "Spotify supports playing now or adding to the end of the queue"
             )
-        await self._control(self.api.play, uri=media_id)
+        await self.async_play_spotify(media_id)
+
+    async def async_play_spotify(self, uri=None):
+        device_id = self._pending_device["id"] if self._pending_device else None
+        await self._control(self.api.play, uri=uri, device_id=device_id)
 
     async def async_select_source(self, source):
-        await self.async_discover_devices()
-        if source not in self._devices:
+        devices = await self.async_discover_devices()
+        device = next((device for device in devices if device["name"] == source), None)
+        if device is None:
             raise ServiceValidationError("Spotify device unavailable")
-        await self._control(self.api.transfer_playback, self._devices[source])
+        await self.async_choose_device(device)
+
+    async def async_choose_device(self, device, *, play=False):
+        """Set a destination when idle, or transfer the existing playback."""
+        playback = self.coordinator.data or {}
+        if playback.get("is_playing") or playback.get("item"):
+            await self._call(self.api.transfer_playback, device["id"], play=play)
+            self._pending_device = None
+            await self.coordinator.async_request_refresh()
+            return
+
+        self._pending_device = device
+        self._attr_source = device["name"]
+        self.async_write_ha_state()
 
     async def async_discover_devices(self):
         result = await self._call(self.api.devices) or {}
@@ -231,9 +257,8 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             and not device.get("is_restricted")
         ]
         devices.sort(key=lambda device: not device.get("is_active", False))
-        self._devices = {}
-        for device in devices:
-            self._devices.setdefault(device["name"], device["id"])
-        self._attr_source_list = list(self._devices)
+        self._attr_source_list = list(
+            dict.fromkeys(device["name"] for device in devices)
+        )
         self.async_write_ha_state()
         return devices

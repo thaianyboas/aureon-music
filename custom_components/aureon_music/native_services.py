@@ -138,9 +138,10 @@ async def _execute(entity, action, args):
         if type(play) is not bool or not isinstance(device_id, str):
             raise ServiceValidationError("Invalid Spotify device transfer")
         devices = await entity.async_discover_devices()
-        if not any(device["id"] == device_id for device in devices):
+        device = next((device for device in devices if device["id"] == device_id), None)
+        if device is None:
             raise ServiceValidationError("Spotify device unavailable")
-        return await entity._control(api.transfer_playback, device_id, play=play)
+        return await entity.async_choose_device(device, play=play)
     if action == "playlist_items_add":
         playlist = args.get("playlist_id")
         uri = args.get("uris")
@@ -162,4 +163,4 @@ async def _execute(entity, action, args):
     uri = args.get("uris" if action == "player_media_play_tracks" else "context_uri")
     if not isinstance(uri, str) or not uri:
         raise ServiceValidationError("Invalid Spotify playback item")
-    return await entity._control(api.play, uri=uri)
+    return await entity.async_play_spotify(uri)

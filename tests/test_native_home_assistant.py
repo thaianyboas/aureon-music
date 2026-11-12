@@ -39,6 +39,7 @@ class Spotify:
         self.access_token = "access"
         self.refresh_token = "rotated"
         self.offline = False
+        self.idle = False
         self.requests = []
         self.device = {
             "id": "speaker-1",
@@ -74,6 +75,8 @@ class Spotify:
                 {"devices": [self.device, {"id": "restricted", "is_restricted": True}]}
             )
         if method == "GET" and url.endswith("/player"):
+            if self.idle:
+                return Response(None, 204)
             return Response(
                 {
                     "device": self.device,
@@ -81,6 +84,8 @@ class Spotify:
                     "is_playing": True,
                 }
             )
+        if method == "PUT" and url.endswith("/player") and self.idle:
+            return Response(None, 404)
         if url.endswith("/library/contains"):
             return Response([True])
         return Response(None, 204)
@@ -254,6 +259,38 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     await player.coordinator.async_refresh()
     assert hass.states.get(state.entity_id).state == "playing"
     assert await credentials.async_load() == saved
+
+    spotify.idle = True
+    await player.coordinator.async_refresh()
+    assert hass.states.get(state.entity_id).state == "idle"
+    spotify.requests.clear()
+    target = {"entity_id": state.entity_id}
+    await hass.services.async_call(
+        "aureon_music",
+        "native_write",
+        {
+            **target,
+            "action": "player_transfer_playback",
+            "arguments": {"device_id": "speaker-1"},
+        },
+        blocking=True,
+    )
+    assert hass.states.get(state.entity_id).attributes["source"] == "Fixture Speaker"
+    assert not any(call[0] == "PUT" for call in spotify.requests)
+    await hass.services.async_call(
+        "aureon_music",
+        "native_write",
+        {
+            **target,
+            "action": "player_media_play_tracks",
+            "arguments": {"uris": "spotify:track:abc"},
+        },
+        blocking=True,
+    )
+    play = next(call for call in spotify.requests if call[0] == "PUT")
+    assert play[1].endswith("/player/play")
+    assert play[2]["params"] == {"device_id": "speaker-1"}
+    assert play[2]["json"] == {"uris": ["spotify:track:abc"]}
 
 
 async def test_reauth_rejects_different_spotify_account(hass, spotify):
