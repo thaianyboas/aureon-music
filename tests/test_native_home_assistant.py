@@ -442,3 +442,107 @@ async def test_native_accounts_keep_credentials_and_commands_separate(hass, spot
     assert await renewed.async_load() is None
     assert (await stores[1].async_load())["refresh_token"] == "refresh-fixture-second"
     assert hass.states.get(entities["fixture-second"]).state == "playing"
+
+
+async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotify):
+    """Owner 2026-11-12: Play answered 404 while the phone still showed the paused song."""
+    form = await hass.config_entries.flow.async_init(
+        "aureon_music", context={"source": config_entries.SOURCE_USER}
+    )
+    external = await hass.config_entries.flow.async_configure(
+        form["flow_id"], {"client_id": "a" * 32}
+    )
+    await _complete(hass, external)
+    await hass.async_block_till_done()
+    (state,) = hass.states.async_all("media_player")
+    target = {"entity_id": state.entity_id}
+    phone = {"id": "phone", "name": "Phone", "is_active": False}
+    speaker = {"id": "wohnung", "name": "Wohnung Musik", "is_active": False}
+    paused = {
+        "device": phone,
+        "item": {"uri": "spotify:track:last"},
+        "is_playing": False,
+    }
+    mode = {"player": paused, "asleep": False}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if url.endswith("/devices"):
+            spotify.requests.append((method, url, kwargs))
+            return Response({"devices": [phone, speaker]})
+        if method == "GET" and url.endswith("/player"):
+            spotify.requests.append((method, url, kwargs))
+            return (
+                Response(mode["player"], 200) if mode["player"] else Response(None, 204)
+            )
+        if url.endswith("/player/recently-played"):
+            spotify.requests.append((method, url, kwargs))
+            return Response(
+                {
+                    "items": [
+                        {
+                            "track": {"uri": "spotify:track:last"},
+                            "context": {"uri": "spotify:playlist:mix"},
+                        }
+                    ]
+                }
+            )
+        if method == "PUT" and url.endswith("/player/play") and mode["asleep"]:
+            spotify.requests.append((method, url, kwargs))
+            mode["asleep"] = False  # the transfer below wakes it
+            return Response(None, 404)
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    player = next(
+        p
+        for p in async_get_platforms(hass, "aureon_music")
+        if p.domain == "media_player"
+    ).entities[state.entity_id]
+    await player.coordinator.async_refresh()
+    player._pending_device = speaker  # chosen on the player card while Spotify was idle
+
+    # 1. the paused song moves with its position to the chosen speaker
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    puts = [c for c in spotify.requests if c[0] == "PUT"]
+    assert puts[0][1].endswith("/me/player")
+    assert puts[0][2]["json"] == {"device_ids": ["wohnung"], "play": True}
+
+    # 2. nothing paused anywhere: the last song starts inside its playlist on the speaker
+    mode["player"] = None
+    await player.coordinator.async_refresh()
+    await player.async_choose_device(speaker)
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    play = next(c for c in spotify.requests if c[0] == "PUT")
+    assert play[2]["params"] == {"device_id": "wohnung"}
+    assert play[2]["json"] == {
+        "context_uri": "spotify:playlist:mix",
+        "offset": {"uri": "spotify:track:last"},
+    }
+
+    # 3. a sleeping speaker is woken by a transfer, then takes the song
+    mode["asleep"] = True
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    puts = [c for c in spotify.requests if c[0] == "PUT"]
+    assert [p[1].rsplit("/", 1)[-1] for p in puts] == ["play", "player", "play"]
+
+    # 4. no speaker chosen and none active: a clear message, nothing sent
+    player._pending_device = None
+    spotify.requests.clear()
+    with pytest.raises(ServiceValidationError, match="Choose a speaker"):
+        await hass.services.async_call(
+            "media_player", "media_play", target, blocking=True
+        )
+    assert not [c for c in spotify.requests if c[0] == "PUT"]
+
+    # pausing with nothing playing does not complain either (Spotify answers 404)
+    def no_device(method, url, **kwargs):
+        if method == "PUT" and url.endswith("/player/pause"):
+            return Response(None, 404)
+        return request(method, url, **kwargs)
+
+    spotify.request = no_device
+    await hass.services.async_call("media_player", "media_pause", target, blocking=True)

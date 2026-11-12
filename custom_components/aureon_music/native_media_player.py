@@ -184,21 +184,112 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_media_play(self):
+        """Play resumes the last song, also when no speaker is active (owner 2026-11-12).
+
+        Spotify keeps a paused song (for example on the phone) without an active device and then answers Play with
+        404. The paused song moves with its position to the chosen speaker; without one, the last played song
+        starts there inside its album or playlist.
+        """
         playback = await self._call(self.api.playback) or {}
-        if playback.get("is_playing") or playback.get("item"):
-            await self.async_play_spotify()
+        device = playback.get("device") or {}
+        if playback.get("is_playing") and device.get("is_active"):
+            await self._control(self.api.play)
+            return
+        target = await self.async_target_device()
+        if (
+            playback.get("item")
+            and device.get("is_active")
+            and (target is None or target["id"] == device.get("id"))
+        ):
+            await self._control(self.api.play)
+            return
+        if target is None:
+            raise ServiceValidationError(
+                "No Spotify speaker is active. Choose a speaker, then press Play."
+            )
+        # the paused song keeps its place: hand the session to the speaker and play
+        if playback.get("item") and await self._unless_404(
+            self.api.transfer_playback, target["id"], play=True
+        ):
+            self._pending_device = target
+            await self.coordinator.async_request_refresh()
             return
         recent = await self._call(
             self.api.request, "GET", "/me/player/recently-played", params={"limit": 1}
         )
         items = (recent or {}).get("items", [])
-        uri = (items[0].get("track") or {}).get("uri") if items else None
-        if not uri:
+        track = (items[0].get("track") or {}).get("uri") if items else None
+        context = (
+            (items[0].get("context") or {}).get("uri") if items else None
+        ) or None
+        if not track:
             raise ServiceValidationError("Choose a song or playlist to start Spotify")
-        await self.async_play_spotify(uri)
+        await self.async_start_on(target, track, context)
+
+    async def _unless_404(self, operation, *args, **kwargs):
+        """Run a Spotify command; False when Spotify answers 404 (speaker asleep), other errors as usual."""
+        failure = None
+        try:
+            await operation(*args, **kwargs)
+        except SpotifyApiError as error:
+            if error.status == 404:
+                return False
+            failure = error
+        except SpotifyReauthorizationRequired:
+            await self._call(operation, *args, **kwargs)
+        if failure is not None:
+            await self._call(self._fail, failure)
+        return True
+
+    @staticmethod
+    async def _fail(error):
+        """Raise a Spotify error again inside _call, which turns it into a clear message."""
+        raise error
+
+    async def async_target_device(self):
+        """The chosen speaker as Spotify lists it now; else the only active one; else None."""
+        devices = await self.async_discover_devices()
+        if selected := self._pending_device:
+            device = next((d for d in devices if d["id"] == selected["id"]), None)
+            if device is None:
+                matches = [d for d in devices if d["name"] == selected["name"]]
+                if len(matches) != 1:
+                    raise ServiceValidationError(
+                        "Selected Spotify speaker is unavailable. Choose the speaker again."
+                    )
+                device = matches[0]
+            self._pending_device = device
+            return device
+        return next((d for d in devices if d.get("is_active")), None)
+
+    async def async_start_on(self, target, track, context=None):
+        """Start a song on a speaker; a sleeping Spotify Connect speaker is woken by a transfer first."""
+        uri, offset = (
+            (context, track)
+            if context and context.startswith(("spotify:album:", "spotify:playlist:"))
+            else (track, None)
+        )
+        device_id = None if target.get("is_active") else target["id"]
+        if not await self._unless_404(
+            self.api.play, uri=uri, offset_uri=offset, device_id=device_id
+        ):
+            # a sleeping Connect speaker (Alexa, groups) often wakes on a transfer, then takes the song
+            woke = await self._unless_404(
+                self.api.transfer_playback, target["id"], play=False
+            )
+            if not woke or not await self._unless_404(
+                self.api.play, uri=uri, offset_uri=offset, device_id=target["id"]
+            ):
+                raise ServiceValidationError(
+                    f"{target['name']} did not answer Spotify. Open Spotify on it once or choose the speaker again."
+                )
+        self._pending_device = target
+        await self.coordinator.async_request_refresh()
 
     async def async_media_pause(self):
-        await self._control(self.api.pause)
+        # nothing playing anywhere (Spotify answers 404): there is nothing to pause, so no error either
+        await self._unless_404(self.api.pause)
+        await self.coordinator.async_request_refresh()
 
     async def async_media_next_track(self):
         await self._control(self.api.next_track)

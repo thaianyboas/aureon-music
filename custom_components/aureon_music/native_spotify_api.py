@@ -146,17 +146,30 @@ class NativeSpotifyApi:
         )
 
     async def play(
-        self, *, device_id: str | None = None, uri: str | None = None
+        self,
+        *,
+        device_id: str | None = None,
+        uri: str | None = None,
+        offset_uri: str | None = None,
     ) -> Any:
         params = {"device_id": device_id} if device_id else None
-        if uri and not re.fullmatch(
-            r"spotify:(track|episode|album|artist|playlist|show):[A-Za-z0-9]+", uri
-        ):
-            raise ValueError("Playback URI must be a Spotify URI")
+        for value in (uri, offset_uri):
+            if value and not re.fullmatch(
+                r"spotify:(track|episode|album|artist|playlist|show):[A-Za-z0-9]+",
+                value,
+            ):
+                raise ValueError("Playback URI must be a Spotify URI")
         if uri and uri.startswith(("spotify:track:", "spotify:episode:")):
             payload = {"uris": [uri]}
         else:
             payload = {"context_uri": uri} if uri else {}
+            # start an album or playlist at a given song (resuming where it stopped)
+            if (
+                uri
+                and offset_uri
+                and uri.startswith(("spotify:album:", "spotify:playlist:"))
+            ):
+                payload["offset"] = {"uri": offset_uri}
         return await self.request("PUT", "/me/player/play", params=params, json=payload)
 
     async def pause(self, *, device_id: str | None = None) -> Any:
