@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -192,7 +193,11 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         """
         playback = await self._call(self.api.playback) or {}
         device = playback.get("device") or {}
-        if playback.get("is_playing") and device.get("is_active"):
+        if (
+            device.get("is_active")
+            and (playback.get("is_playing") or playback.get("item"))
+            and self._pending_device is None
+        ):
             await self._control(self.api.play)
             return
         target = await self.async_target_device()
@@ -201,7 +206,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             and device.get("is_active")
             and (target is None or target["id"] == device.get("id"))
         ):
-            await self._control(self.api.play)
+            await self._control(self.api.play, device_id=target["id"] if target else None)
             return
         if target is None:
             raise ServiceValidationError(
@@ -250,38 +255,58 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         """The chosen speaker as Spotify lists it now; else the only active one; else None."""
         devices = await self.async_discover_devices()
         if selected := self._pending_device:
-            device = next((d for d in devices if d["id"] == selected["id"]), None)
+            device = self._find_device(devices, selected)
             if device is None:
-                matches = [d for d in devices if d["name"] == selected["name"]]
-                if len(matches) != 1:
-                    raise ServiceValidationError(
-                        "Selected Spotify speaker is unavailable. Choose the speaker again."
-                    )
-                device = matches[0]
+                raise ServiceValidationError(
+                    "Selected Spotify speaker is unavailable. Choose the speaker again."
+                )
             self._pending_device = device
             return device
         return next((d for d in devices if d.get("is_active")), None)
 
-    async def async_start_on(self, target, track, context=None):
-        """Start a song on a speaker; a sleeping Spotify Connect speaker is woken by a transfer first."""
-        uri, offset = (
-            (context, track)
-            if context and context.startswith(("spotify:album:", "spotify:playlist:"))
-            else (track, None)
-        )
-        device_id = None if target.get("is_active") else target["id"]
-        if not await self._unless_404(
-            self.api.play, uri=uri, offset_uri=offset, device_id=device_id
-        ):
-            # a sleeping Connect speaker (Alexa, groups) often wakes on a transfer, then takes the song
-            woke = await self._unless_404(
+    @staticmethod
+    def _find_device(devices, selected):
+        if device := next((d for d in devices if d["id"] == selected["id"]), None):
+            return device
+        matches = [d for d in devices if d["name"] == selected["name"]]
+        return matches[0] if len(matches) == 1 else None
+
+    async def async_start_on(self, target, uri, context=None):
+        """Start playback on the selected Connect device."""
+        async def play(device):
+            if (
+                context
+                and context.startswith(("spotify:album:", "spotify:playlist:"))
+                and await self._unless_404(
+                    self.api.play, uri=context, offset_uri=uri, device_id=device["id"]
+                )
+            ):
+                return True
+            return await self._unless_404(
+                self.api.play, uri=uri, device_id=device["id"]
+            )
+
+        if not await play(target):
+            current = self._find_device(await self.async_discover_devices(), target)
+            if current is not None:
+                target = current
+            transferred = await self._unless_404(
                 self.api.transfer_playback, target["id"], play=False
             )
-            if not woke or not await self._unless_404(
-                self.api.play, uri=uri, offset_uri=offset, device_id=target["id"]
-            ):
+            # Connect may advertise a new ID while applying the transfer.
+            for delay in (0.25, 0.75) if transferred else (0.25,):
+                await asyncio.sleep(delay)
+                current = self._find_device(await self.async_discover_devices(), target)
+                if current is None or (not transferred and current["id"] == target["id"]):
+                    continue
+                target = current
+                if await play(target):
+                    break
+            else:
                 raise ServiceValidationError(
-                    f"{target['name']} did not answer Spotify. Open Spotify on it once or choose the speaker again."
+                    f"Spotify could not start playback on {target['name']}. "
+                    "Choose another Spotify Connect device or start playback on "
+                    "that speaker in the Spotify app."
                 )
         self._pending_device = target
         await self.coordinator.async_request_refresh()
@@ -326,25 +351,11 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.async_play_spotify(media_id)
 
     async def async_play_spotify(self, uri=None):
-        device_id = None
-        if selected := self._pending_device:
-            devices = await self.async_discover_devices()
-            device = next(
-                (entry for entry in devices if entry["id"] == selected["id"]), None
-            )
-            if device is None:
-                matches = [
-                    entry for entry in devices if entry["name"] == selected["name"]
-                ]
-                if len(matches) != 1:
-                    raise ServiceValidationError(
-                        "Selected Spotify speaker is unavailable. Choose the speaker again."
-                    )
-                device = matches[0]
-            self._pending_device = device
-            if not device.get("is_active"):
-                device_id = device["id"]
-        await self._control(self.api.play, uri=uri, device_id=device_id)
+        if self._pending_device:
+            target = await self.async_target_device()
+            await self.async_start_on(target, uri)
+            return
+        await self._control(self.api.play, uri=uri)
 
     async def async_select_source(self, source):
         devices = await self.async_discover_devices()

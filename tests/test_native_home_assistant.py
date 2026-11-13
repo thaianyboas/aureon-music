@@ -312,7 +312,7 @@ async def test_pkce_entry_and_player_services(hass, spotify, hass_read_only_user
     spotify.requests.clear()
     await hass.services.async_call("media_player", "media_play", target, blocking=True)
     play = next(call for call in spotify.requests if call[0] == "PUT")
-    assert play[2]["params"] is None
+    assert play[2]["params"] == {"device_id": "speaker-reconnected"}
     assert play[2]["json"] == {}
 
 
@@ -463,7 +463,7 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
         "item": {"uri": "spotify:track:last"},
         "is_playing": False,
     }
-    mode = {"player": paused, "asleep": False}
+    mode = {"player": paused, "asleep": False, "missing_context": False}
     original = spotify.request
 
     def request(method, url, **kwargs):
@@ -487,9 +487,13 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
                     ]
                 }
             )
-        if method == "PUT" and url.endswith("/player/play") and mode["asleep"]:
+        if method == "PUT" and url.endswith("/player") and mode["asleep"]:
+            speaker["id"] = "wohnung-reconnected"
+            mode["asleep"] = False
+        if method == "PUT" and url.endswith("/player/play") and (
+            mode["asleep"] or (mode["missing_context"] and "context_uri" in kwargs["json"])
+        ):
             spotify.requests.append((method, url, kwargs))
-            mode["asleep"] = False  # the transfer below wakes it
             return Response(None, 404)
         return original(method, url, **kwargs)
 
@@ -522,12 +526,24 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
         "offset": {"uri": "spotify:track:last"},
     }
 
-    # 3. a sleeping speaker is woken by a transfer, then takes the song
+    # A deleted or inaccessible playlist does not prevent playing the track.
+    mode["missing_context"] = True
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    puts = [c for c in spotify.requests if c[0] == "PUT"]
+    assert len(puts) == 2
+    assert puts[-1][2]["json"] == {"uris": ["spotify:track:last"]}
+    mode["missing_context"] = False
+
+    # 3. a sleeping speaker reconnects with a new ID after transfer
     mode["asleep"] = True
     spotify.requests.clear()
     await hass.services.async_call("media_player", "media_play", target, blocking=True)
     puts = [c for c in spotify.requests if c[0] == "PUT"]
-    assert [p[1].rsplit("/", 1)[-1] for p in puts] == ["play", "player", "play"]
+    assert [p[1].rsplit("/", 1)[-1] for p in puts] == [
+        "play", "play", "player", "play",
+    ]
+    assert puts[-1][2]["params"] == {"device_id": "wohnung-reconnected"}
 
     # 4. no speaker chosen and none active: a clear message, nothing sent
     player._pending_device = None
