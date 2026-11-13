@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b13
+## Motor nativo — prévia HACS 1.1.0b14
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
@@ -91,3 +91,6 @@ alto-falante foi escolhido (um grupo Amazon adormecido é acordado pela Alexa). 
 integração (ação `aureon_music.native_write`, `set_default_speaker`, nome vazio remove). Play, pausa, volume,
 aleatório e repetir mantêm o que foi tocado por até 8 s enquanto o Spotify ainda informa o estado antigo, para o
 botão não voltar atrás.
+
+A prévia 1.1.0b14 troca de música na hora quando um alto-falante já está tocando (como play e pausa: o resto
+termina em segundo plano).

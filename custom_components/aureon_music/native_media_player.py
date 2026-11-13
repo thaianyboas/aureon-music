@@ -850,7 +850,24 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         ):
             await self.async_start_on(target, uri)
             return
-        await self._control(self.api.play, uri=uri)
+        # music is playing on a speaker right now: switch to the new song at once, like play/pause (an Amazon speaker
+        # may keep Spotify's answer waiting; it finishes in the background)
+        await self._quick(
+            self._set(state=MediaPlayerState.PLAYING),
+            self.api.play,
+            lambda p: (
+                bool(p.get("is_playing"))
+                and (
+                    uri is None
+                    or uri
+                    in (
+                        (p.get("item") or {}).get("uri"),
+                        (p.get("context") or {}).get("uri"),
+                    )
+                )
+            ),
+            uri=uri,
+        )
 
     async def async_select_source(self, source):
         devices = await self.async_discover_devices()
