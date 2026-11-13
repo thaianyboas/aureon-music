@@ -500,8 +500,13 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
                     "is_playing": True,
                 }
             return Response(None, 502)
-        if method == "PUT" and url.endswith("/player/play") and (
-            mode["asleep"] or (mode["missing_context"] and "context_uri" in kwargs["json"])
+        if (
+            method == "PUT"
+            and url.endswith("/player/play")
+            and (
+                mode["asleep"]
+                or (mode["missing_context"] and "context_uri" in kwargs["json"])
+            )
         ):
             spotify.requests.append((method, url, kwargs))
             return Response(None, 404)
@@ -551,7 +556,10 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
     await hass.services.async_call("media_player", "media_play", target, blocking=True)
     puts = [c for c in spotify.requests if c[0] == "PUT"]
     assert [p[1].rsplit("/", 1)[-1] for p in puts] == [
-        "play", "play", "player", "play",
+        "play",
+        "play",
+        "player",
+        "play",
     ]
     assert puts[-1][2]["params"] == {"device_id": "wohnung-reconnected"}
 
@@ -560,7 +568,9 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
     for already_started in (False, True):
         gateway_errors.append(already_started)
         spotify.requests.clear()
-        await hass.services.async_call("media_player", "media_play", target, blocking=True)
+        await hass.services.async_call(
+            "media_player", "media_play", target, blocking=True
+        )
         plays = [c for c in spotify.requests if c[0] == "PUT"]
         assert len(plays) == (1 if already_started else 2)
         assert all(
@@ -585,3 +595,90 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
 
     spotify.request = no_device
     await hass.services.async_call("media_player", "media_pause", target, blocking=True)
+
+
+async def test_play_wakes_an_amazon_speaker_through_alexa(hass, spotify, monkeypatch):
+    """Owner 2026-11-13: Wohnung Musik (an Alexa group) refused every Web API start; Alexa wakes it first."""
+    import asyncio
+
+    from homeassistant.helpers import entity_registry as er
+
+    form = await hass.config_entries.flow.async_init(
+        "aureon_music", context={"source": config_entries.SOURCE_USER}
+    )
+    external = await hass.config_entries.flow.async_configure(
+        form["flow_id"], {"client_id": "a" * 32}
+    )
+    await _complete(hass, external)
+    await hass.async_block_till_done()
+    (state,) = hass.states.async_all("media_player")
+    target = {"entity_id": state.entity_id}
+    speaker = {"id": "wohnung", "name": "Wohnung Musik", "is_active": False}
+    awake = {"value": False}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if url.endswith("/devices"):
+            spotify.requests.append((method, url, kwargs))
+            return Response({"devices": [dict(speaker, is_active=awake["value"])]})
+        if method == "GET" and url.endswith("/player"):
+            spotify.requests.append((method, url, kwargs))
+            return Response(None, 204)
+        if url.endswith("/player/recently-played"):
+            spotify.requests.append((method, url, kwargs))
+            return Response(
+                {
+                    "items": [
+                        {
+                            "track": {
+                                "uri": "spotify:track:last",
+                                "name": "Where Do We Go",
+                                "artists": [{"name": "LUM!X"}],
+                            },
+                            "context": {"uri": "spotify:playlist:mix"},
+                        }
+                    ]
+                }
+            )
+        if method == "PUT" and "/player" in url:
+            spotify.requests.append((method, url, kwargs))
+            return Response({}, 204) if awake["value"] else Response(None, 404)
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda delay: sleep(0))
+    player = next(
+        p
+        for p in async_get_platforms(hass, "aureon_music")
+        if p.domain == "media_player"
+    ).entities[state.entity_id]
+    player._pending_device = speaker
+
+    # without Alexa Media Player: a message that says why and what helps
+    with pytest.raises(ServiceValidationError, match="Alexa Media Player"):
+        await hass.services.async_call(
+            "media_player", "media_play", target, blocking=True
+        )
+
+    # with it: Alexa starts the song on the group, then the exact song inside its playlist follows
+    er.async_get(hass).async_get_or_create(
+        "media_player", "alexa_media", "group-1", original_name="Wohnung Musik"
+    )
+    asked = []
+
+    async def alexa(call):
+        asked.append(dict(call.data))
+        awake["value"] = True
+
+    hass.services.async_register("media_player", "play_media", alexa)
+    spotify.requests.clear()
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    assert asked and asked[0]["media_content_type"] == "SPOTIFY"
+    assert asked[0]["media_content_id"] == "Where Do We Go LUM!X"
+    final = [c for c in spotify.requests if c[0] == "PUT"][-1]
+    assert final[2]["params"] == {"device_id": "wohnung"}
+    assert final[2]["json"] == {
+        "context_uri": "spotify:playlist:mix",
+        "offset": {"uri": "spotify:track:last"},
+    }

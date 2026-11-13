@@ -18,6 +18,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
@@ -39,6 +40,18 @@ TRANSIENT_ERRORS = (
     SpotifyApiError,
     SpotifyTokenRefreshError,
 )
+
+
+def _label(item):
+    """'Song Artist' (or an album or playlist name) to find the item again by voice search."""
+    if not isinstance(item, dict) or not item.get("name"):
+        return None
+    artists = [
+        a.get("name")
+        for a in item.get("artists") or []
+        if isinstance(a, dict) and a.get("name")
+    ]
+    return f"{item['name']} {artists[0]}" if artists else item["name"]
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -230,11 +243,15 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         ) or None
         if not track:
             raise ServiceValidationError("Choose a song or playlist to start Spotify")
-        await self.async_start_on(target, track, context)
+        await self.async_start_on(
+            target, track, context, label=_label(items[0].get("track"))
+        )
 
     async def _resume_on(self, target):
         if not await self._try_playback(self.api.play, target):
-            raise ServiceValidationError("Spotify could not resume playback. Choose a song or playlist.")
+            raise ServiceValidationError(
+                "Spotify could not resume playback. Choose a song or playlist."
+            )
         await self.coordinator.async_request_refresh()
 
     async def _try_playback(self, operation, target, **kwargs):
@@ -243,6 +260,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         try:
             await operation(device_id=device_id, **kwargs)
         except SpotifyApiError as error:
+            self._last_status = error.status
             if error.status not in PLAYBACK_GATEWAY_ERRORS or not device_id:
                 return await self._unless_404(self._fail, error)
 
@@ -255,7 +273,10 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             if (
                 device.get("id") == device_id
                 and playback.get("is_playing")
-                and (expected is None or expected in (item.get("uri"), context.get("uri")))
+                and (
+                    expected is None
+                    or expected in (item.get("uri"), context.get("uri"))
+                )
             ):
                 return True
 
@@ -263,7 +284,9 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             if current is None:
                 return False
             try:
-                return await self._unless_404(operation, device_id=current["id"], **kwargs)
+                return await self._unless_404(
+                    operation, device_id=current["id"], **kwargs
+                )
             except TRANSIENT_ERRORS as retry_error:
                 await self._call(self._fail, retry_error)
         except (SpotifyReauthorizationRequired, *TRANSIENT_ERRORS, ValueError) as error:
@@ -276,6 +299,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         try:
             await operation(*args, **kwargs)
         except SpotifyApiError as error:
+            self._last_status = error.status
             if error.status == 404:
                 return False
             failure = error
@@ -310,8 +334,9 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         matches = [d for d in devices if d["name"] == selected["name"]]
         return matches[0] if len(matches) == 1 else None
 
-    async def async_start_on(self, target, uri, context=None):
+    async def async_start_on(self, target, uri, context=None, label=None):
         """Start playback on the selected Connect device."""
+
         async def play(device):
             if (
                 context
@@ -334,19 +359,114 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             for delay in (0.25, 0.75) if transferred else (0.25,):
                 await asyncio.sleep(delay)
                 current = self._find_device(await self.async_discover_devices(), target)
-                if current is None or (not transferred and current["id"] == target["id"]):
+                if current is None or (
+                    not transferred and current["id"] == target["id"]
+                ):
                     continue
                 target = current
                 if await play(target):
                     break
             else:
-                raise ServiceValidationError(
-                    f"Spotify could not start playback on {target['name']}. "
-                    "Choose another Spotify Connect device or start playback on "
-                    "that speaker in the Spotify app."
-                )
+                # Owner 2026-11-13 ("corrija esse problema de vez"): Amazon speakers and groups often refuse
+                # Spotify's Web API until Alexa itself starts Spotify on them. With Alexa Media Player installed,
+                # AUREON asks Alexa to play the song there, then takes over the now awake Connect session.
+                woken = await self._wake_with_alexa(target, uri, context, label)
+                if woken is None:
+                    raise ServiceValidationError(
+                        f"Spotify could not start playback on {target['name']}"
+                        f"{self._status_note()}. Amazon speakers accept Spotify from Home "
+                        "Assistant only after Alexa has started Spotify on them: install "
+                        "Alexa Media Player (HACS) so AUREON can wake them, or say "
+                        "'Alexa, play Spotify' on that speaker once."
+                    )
+                target = woken
         self._pending_device = target
         await self.coordinator.async_request_refresh()
+
+    def _status_note(self):
+        status = getattr(self, "_last_status", None)
+        return f" (Spotify HTTP {status})" if status else ""
+
+    def _alexa_entity(self, name):
+        """The Alexa Media Player entity of a Spotify Connect speaker or group, matched by its name."""
+        wanted = name.casefold().strip()
+        registry = er.async_get(self.hass)
+        for entry in registry.entities.values():
+            if (
+                entry.domain != "media_player"
+                or entry.platform != "alexa_media"
+                or entry.disabled_by
+            ):
+                continue
+            state = self.hass.states.get(entry.entity_id)
+            names = {
+                entry.name,
+                entry.original_name,
+                state and state.attributes.get("friendly_name"),
+            }
+            if wanted in {str(n).casefold().strip() for n in names if n}:
+                return entry.entity_id
+        return None
+
+    async def _wake_with_alexa(self, target, uri, context, label):
+        """Let Alexa start Spotify on the speaker, wait for the Connect session, then play the exact item there.
+
+        Returns the speaker as Spotify then lists it, or None when there is no Alexa Media Player entity for it or
+        the speaker did not come up.
+        """
+        entity_id = self._alexa_entity(target["name"])
+        if entity_id is None:
+            return None
+        phrase = label or await self._label_for(uri or context)
+        if not phrase:
+            return None
+        LOGGER.info(
+            "Waking %s through Alexa Media Player (%s)", target["name"], entity_id
+        )
+        await self.hass.services.async_call(
+            "media_player",
+            "play_media",
+            {
+                "entity_id": entity_id,
+                "media_content_type": "SPOTIFY",
+                "media_content_id": phrase,
+            },
+            blocking=True,
+        )
+        for _ in range(12):
+            await asyncio.sleep(1)
+            current = self._find_device(await self.async_discover_devices(), target)
+            if current is not None and current.get("is_active"):
+                break
+        else:
+            return None
+        # Alexa found the song by its name; the exact song inside its playlist follows on the awake speaker
+        exact = (
+            (context, uri)
+            if context and context.startswith(("spotify:album:", "spotify:playlist:"))
+            else (uri, None)
+        )
+        if exact[0]:
+            await self._unless_404(
+                self.api.play,
+                uri=exact[0],
+                offset_uri=exact[1],
+                device_id=current["id"],
+            )
+        return current
+
+    async def _label_for(self, uri):
+        """A search phrase for Alexa: a song with its artist, or the name of an album or playlist."""
+        if not uri or uri.count(":") != 2:
+            return None
+        kind, ident = uri.split(":")[1:]
+        if kind not in ("track", "album", "playlist", "artist"):
+            return None
+        try:
+            item = await self.api.request("GET", f"/{kind}s/{ident}")
+        except (SpotifyApiError, *TRANSIENT_ERRORS[:3], ValueError):
+            return None
+        return _label(item)
 
     async def async_media_pause(self):
         # nothing playing anywhere (Spotify answers 404): there is nothing to pause, so no error either

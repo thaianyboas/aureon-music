@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b9
+## Motor nativo — prévia HACS 1.1.0b10
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
@@ -68,3 +68,8 @@ A reprodução física no grupo Wohnung Musik ainda precisa de validação.
 A prévia 1.1.0b9 verifica o estado após HTTP 502, 503 ou 504 no comando de
 reprodução e permite uma nova tentativa no mesmo destino. A resposta da API
 do Spotify ao grupo físico Wohnung Musik continua pendente de validação.
+
+A prévia 1.1.0b10 trata alto-falantes e grupos Amazon (Alexa) que recusam o início pela Web API do
+Spotify: com a integração **Alexa Media Player** instalada, o AUREON pede à Alexa que toque a música
+nesse alto-falante, espera a sessão Spotify Connect ficar ativa e depois toca a faixa exata dentro da
+playlist. Sem Alexa Media Player, a mensagem explica isso e mostra o código HTTP do Spotify.
