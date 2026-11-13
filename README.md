@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b12
+## Motor nativo — prévia HACS 1.1.0b13
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
@@ -84,3 +84,10 @@ pela Alexa, sem esperar pelas tentativas da Web API.
 A prévia 1.1.0b12 retoma uma sessão ativa sem consultar antes o Spotify e espera no máximo 0,8 s pela resposta
 de um alto-falante lento; o resto termina em segundo plano. Depois de cada comando o estado é lido de novo
 aos 1, 2,5 e 5 s, e enquanto a música toca o cartão acompanha o Spotify a cada 5 s (antes 15 s).
+
+A prévia 1.1.0b13 tem um alto-falante padrão por conta: no AUREON, em Configurações → Alto-falantes, toque em
+"Tornar padrão". Play, uma música ou uma playlist vão para ele sempre que nada está tocando e nenhum outro
+alto-falante foi escolhido (um grupo Amazon adormecido é acordado pela Alexa). O padrão fica nas opções da
+integração (ação `aureon_music.native_write`, `set_default_speaker`, nome vazio remove). Play, pausa, volume,
+aleatório e repetir mantêm o que foi tocado por até 8 s enquanto o Spotify ainda informa o estado antigo, para o
+botão não voltar atrás.

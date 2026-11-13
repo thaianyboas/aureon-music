@@ -42,6 +42,7 @@ WRITE = {
     "player_media_play_context",
     "add_to_queue",
     "playlist_items_add",
+    "set_default_speaker",
 }
 
 
@@ -142,6 +143,18 @@ async def _execute(entity, action, args):
         if device is None:
             raise ServiceValidationError("Spotify device unavailable")
         return await entity.async_choose_device(device, play=play)
+    if action == "set_default_speaker":
+        # a speaker Spotify lists now (or the standard one again), or "" to clear it
+        name = args.get("name", "")
+        if not isinstance(name, str) or len(name) > 200:
+            raise ServiceValidationError("Invalid Spotify speaker")
+        name = name.strip()
+        if name and name != entity.default_speaker:
+            devices = await entity.async_discover_devices()
+            if not any(device["name"] == name for device in devices):
+                raise ServiceValidationError("Spotify device unavailable")
+        entity.set_default_speaker(name or None)
+        return None
     if action == "playlist_items_add":
         playlist = args.get("playlist_id")
         uri = args.get("uris")

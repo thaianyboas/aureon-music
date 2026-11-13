@@ -837,3 +837,158 @@ async def test_controls_trust_the_state_after_a_gateway_error(
             "media_player", "media_pause", target, blocking=True
         )
     assert len([c for c in spotify.requests if str(c[1]).endswith("/pause")]) == 2
+
+
+async def _native_player(hass):
+    form = await hass.config_entries.flow.async_init(
+        "aureon_music", context={"source": config_entries.SOURCE_USER}
+    )
+    external = await hass.config_entries.flow.async_configure(
+        form["flow_id"], {"client_id": "a" * 32}
+    )
+    await _complete(hass, external)
+    await hass.async_block_till_done()
+    (state,) = hass.states.async_all("media_player")
+    player = next(
+        p
+        for p in async_get_platforms(hass, "aureon_music")
+        if p.domain == "media_player"
+    ).entities[state.entity_id]
+    return state.entity_id, player
+
+
+async def test_play_goes_to_the_standard_speaker(hass, spotify):
+    """Owner 2026-11-13: "um botao que eu clique e selecione o meu speaker standard"."""
+    entity_id, player = await _native_player(hass)
+    phone = {"id": "phone", "name": "Phone", "is_active": True}
+    speaker = {"id": "wohnung", "name": "Wohnung Musik", "is_active": False}
+    mode = {"player": None}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if url.endswith("/devices"):
+            return Response({"devices": [phone, speaker]})
+        if method == "GET" and url.endswith("/player"):
+            return Response(mode["player"]) if mode["player"] else Response(None, 204)
+        if url.endswith("/player/recently-played"):
+            return Response({"items": [{"track": {"uri": "spotify:track:last"}}]})
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    write = {
+        "entity_id": entity_id,
+        "action": "set_default_speaker",
+        "arguments": {"name": "Wohnung Musik"},
+    }
+    await hass.services.async_call("aureon_music", "native_write", write, blocking=True)
+    await hass.async_block_till_done()
+    assert (
+        hass.states.get(entity_id).attributes["aureon_default_speaker"]
+        == "Wohnung Musik"
+    )
+    assert player.entry.options["default_speaker"] == "Wohnung Musik"
+    # a speaker Spotify does not list cannot become the standard one
+    with pytest.raises(ServiceValidationError, match="unavailable"):
+        await hass.services.async_call(
+            "aureon_music",
+            "native_write",
+            {**write, "arguments": {"name": "Unknown"}},
+            blocking=True,
+        )
+
+    # nothing playing: Play starts the last song on the standard speaker, not on the active phone
+    await player.coordinator.async_refresh()
+    spotify.requests.clear()
+    await hass.services.async_call(
+        "media_player", "media_play", {"entity_id": entity_id}, blocking=True
+    )
+    play = next(c for c in spotify.requests if c[0] == "PUT")
+    assert play[2]["params"] == {"device_id": "wohnung"}
+
+    # the phone's paused song moves to the standard speaker instead of resuming on the phone
+    mode["player"] = {
+        "device": phone,
+        "item": {"uri": "spotify:track:paused"},
+        "is_playing": False,
+    }
+    await player.coordinator.async_refresh()
+    spotify.requests.clear()
+    await hass.services.async_call(
+        "media_player", "media_play", {"entity_id": entity_id}, blocking=True
+    )
+    put = next(c for c in spotify.requests if c[0] == "PUT")
+    assert put[1].endswith("/me/player")
+    assert put[2]["json"] == {"device_ids": ["wohnung"], "play": True}
+
+    # music playing on the phone right now: a playlist keeps playing there
+    mode["player"] = {**mode["player"], "is_playing": True}
+    await player.coordinator.async_refresh()
+    player._pending_device = None
+    spotify.requests.clear()
+    await hass.services.async_call(
+        "media_player",
+        "play_media",
+        {
+            "entity_id": entity_id,
+            "media_content_type": "playlist",
+            "media_content_id": "spotify:playlist:mix",
+        },
+        blocking=True,
+    )
+    put = next(c for c in spotify.requests if c[0] == "PUT")
+    assert "device_id" not in (put[2].get("params") or {})
+
+    # cleared again
+    await hass.services.async_call(
+        "aureon_music",
+        "native_write",
+        {**write, "arguments": {"name": ""}},
+        blocking=True,
+    )
+    assert "default_speaker" not in player.entry.options
+    assert hass.states.get(entity_id).attributes["aureon_default_speaker"] is None
+
+
+async def test_a_pressed_pause_holds_while_the_speaker_catches_up(
+    hass, spotify, monkeypatch
+):
+    """Owner 2026-11-13: "os botoes play e pausa nao responde instantaneamente" – the button jumped back."""
+    entity_id, player = await _native_player(hass)
+    group = {"id": "wohnung", "name": "Wohnung Musik", "is_active": True}
+    reported = {"is_playing": True}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if method == "GET" and url.endswith("/player"):
+            return Response(
+                {"device": group, "item": {"uri": "spotify:track:now"}, **reported}
+            )
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    await player.coordinator.async_refresh()
+    assert hass.states.get(entity_id).state == "playing"
+    await hass.services.async_call(
+        "media_player", "media_pause", {"entity_id": entity_id}, blocking=True
+    )
+    # Spotify still reports the old state for a moment: the card keeps showing what was pressed
+    await player.coordinator.async_refresh()
+    assert hass.states.get(entity_id).state == "paused"
+    # once Spotify agrees the hold ends, so later changes (the phone) show again
+    reported["is_playing"] = False
+    await player.coordinator.async_refresh()
+    assert not player._held
+    reported["is_playing"] = True
+    await player.coordinator.async_refresh()
+    assert hass.states.get(entity_id).state == "playing"
+    # a hold never outlives HOLD_SECONDS
+    await hass.services.async_call(
+        "media_player", "media_pause", {"entity_id": entity_id}, blocking=True
+    )
+    clock = time.monotonic() + 9
+    monkeypatch.setattr(
+        "custom_components.aureon_music.native_media_player.time.monotonic",
+        lambda: clock,
+    )
+    await player.coordinator.async_refresh()
+    assert hass.states.get(entity_id).state == "playing"

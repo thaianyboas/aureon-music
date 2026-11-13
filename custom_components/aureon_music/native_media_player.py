@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 
 from aiohttp import ClientError
@@ -151,9 +152,61 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             ),
             "sp_user_display_name": self._attr_name,
             "aureon_music_native": True,
+            "aureon_default_speaker": self.default_speaker,
         }
         self._pending_device = None
+        self._held = {}
         self._apply_state()
+
+    # Owner 2026-11-13: "um botao que eu clique e selecione o meu speaker standard". The standard speaker is kept in
+    # the config entry options (no reload listener, so saving it does not restart the player). Play, a song or a
+    # playlist go there whenever nothing is playing right now and no speaker was chosen for this session.
+    @property
+    def default_speaker(self):
+        name = (self.entry.options or {}).get("default_speaker")
+        return name if isinstance(name, str) and name.strip() else None
+
+    def set_default_speaker(self, name):
+        options = {**(self.entry.options or {})}
+        if name:
+            options["default_speaker"] = name
+        else:
+            options.pop("default_speaker", None)
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        self._attr_extra_state_attributes = {
+            **self._attr_extra_state_attributes,
+            "aureon_default_speaker": self.default_speaker,
+        }
+        self.async_write_ha_state()
+
+    def _prefers(self, device):
+        """Whether a session on this speaker may simply resume (no standard speaker, or it is the standard one)."""
+        default = self.default_speaker
+        return default is None or device.get("name") == default
+
+    # Owner 2026-11-13 ("os botoes play e pausa nao responde instantaneamente"): an Amazon speaker applies a command
+    # seconds after Spotify accepted it, so the refreshes right after a press still reported the old state and the
+    # button jumped back. What was just pressed is held for HOLD_SECONDS unless Spotify reports it sooner.
+    HOLD_SECONDS = 8.0
+
+    def _hold(self, **attrs):
+        until = time.monotonic() + self.HOLD_SECONDS
+        for key, value in attrs.items():
+            self._held[key] = (value, until)
+
+    def _apply_held(self):
+        now = time.monotonic()
+        for key, (value, until) in list(self._held.items()):
+            current = getattr(self, f"_attr_{key}", None)
+            same = current == value or (
+                isinstance(value, float)
+                and isinstance(current, (int, float))
+                and abs(current - value) < 0.015
+            )
+            if same or now > until:
+                del self._held[key]
+            else:
+                setattr(self, f"_attr_{key}", value)
 
     def _apply_state(self):
         playback = self.coordinator.data or {}
@@ -205,6 +258,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         self._attr_supported_features = self._features
         if device.get("supports_volume") and not device.get("is_restricted"):
             self._attr_supported_features |= MediaPlayerEntityFeature.VOLUME_SET
+        self._apply_held()
 
     def _handle_coordinator_update(self):
         self._apply_state()
@@ -274,6 +328,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             cached_device.get("is_active")
             and cached.get("item")
             and self._pending_device is None
+            and (cached.get("is_playing") or self._prefers(cached_device))
         ):
             await self._resume_on(cached_device)
             return
@@ -283,6 +338,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             device.get("is_active")
             and (playback.get("is_playing") or playback.get("item"))
             and self._pending_device is None
+            and (playback.get("is_playing") or self._prefers(device))
         ):
             await self._resume_on(device)
             return
@@ -298,12 +354,21 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             raise ServiceValidationError(
                 "No Spotify speaker is active. Choose a speaker, then press Play."
             )
-        # the paused song keeps its place: hand the session to the speaker and play
-        if playback.get("item") and await self._try_playback(
-            self.api.transfer_playback, target, play=True
+        # the paused song keeps its place: hand the session to the speaker and play (a sleeping Amazon speaker is
+        # woken by Alexa below instead: a transfer to it only waits for a gateway timeout)
+        asleep = not target.get("is_active") and self._is_amazon(target["name"])
+        if (
+            playback.get("item")
+            and target.get("id")
+            and not asleep
+            and await self._try_playback(self.api.transfer_playback, target, play=True)
         ):
             self._pending_device = target
             await self._refreshed()
+            return
+        if paused := playback.get("item"):
+            context = (playback.get("context") or {}).get("uri") or None
+            await self.async_start_on(target, paused.get("uri"), context, item=paused)
             return
         recent = await self._call(
             self.api.request, "GET", "/me/player/recently-played", params={"limit": 1}
@@ -403,7 +468,15 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
                 )
             self._pending_device = device
             return device
-        return next((d for d in devices if d.get("is_active")), None)
+        active = next((d for d in devices if d.get("is_active")), None)
+        playing = bool((self.coordinator.data or {}).get("is_playing"))
+        if (default := self.default_speaker) and not (active and playing):
+            if device := next((d for d in devices if d["name"] == default), None):
+                return device
+            # a sleeping Amazon speaker or group is often missing from Spotify's list until Alexa wakes it
+            if self._is_amazon(default):
+                return {"id": None, "name": default, "is_active": False}
+        return active
 
     @staticmethod
     def _find_device(devices, selected):
@@ -422,6 +495,11 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
                 self._pending_device = woken
                 await self._refreshed()
                 return
+        if not target.get("id"):
+            raise ServiceValidationError(
+                f"{target['name']} did not come up in Spotify. Say 'Alexa, play Spotify' on it once, "
+                "or choose another speaker."
+            )
 
         async def play(device):
             if (
@@ -660,6 +738,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             try:
                 await self._command(operation, done, *args, **kwargs)
             except HomeAssistantError as error:
+                self._held.clear()
                 if not waiting["value"]:
                     LOGGER.warning("Spotify command did not finish: %s", error)
                     await self._refreshed()
@@ -677,6 +756,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         def apply():
             for key, value in attrs.items():
                 setattr(self, f"_attr_{key}", value)
+            self._hold(**attrs)
 
         return apply
 
@@ -764,8 +844,10 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.async_play_spotify(media_id)
 
     async def async_play_spotify(self, uri=None):
-        if self._pending_device:
-            target = await self.async_target_device()
+        playing = bool((self.coordinator.data or {}).get("is_playing"))
+        if (self._pending_device or (self.default_speaker and not playing)) and (
+            target := await self.async_target_device()
+        ):
             await self.async_start_on(target, uri)
             return
         await self._control(self.api.play, uri=uri)
