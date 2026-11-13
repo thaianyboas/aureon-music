@@ -655,8 +655,8 @@ async def test_play_wakes_an_amazon_speaker_through_alexa(hass, spotify, monkeyp
     ).entities[state.entity_id]
     player._pending_device = speaker
 
-    # without Alexa Media Player: a message that says why and what helps
-    with pytest.raises(ServiceValidationError, match="Alexa Media Player"):
+    # without an Alexa integration: a message that says why and what helps
+    with pytest.raises(ServiceValidationError, match="Alexa Devices"):
         await hass.services.async_call(
             "media_player", "media_play", target, blocking=True
         )
@@ -678,6 +678,98 @@ async def test_play_wakes_an_amazon_speaker_through_alexa(hass, spotify, monkeyp
     assert asked[0]["media_content_id"] == "Where Do We Go LUM!X"
     final = [c for c in spotify.requests if c[0] == "PUT"][-1]
     assert final[2]["params"] == {"device_id": "wohnung"}
+    assert final[2]["json"] == {
+        "context_uri": "spotify:playlist:mix",
+        "offset": {"uri": "spotify:track:last"},
+    }
+
+
+async def test_play_wakes_a_speaker_group_through_alexa_devices(
+    hass, spotify, monkeypatch
+):
+    """Owner 2026-11-13 has Home Assistant's Alexa Devices: a group is played on through another Echo."""
+    import asyncio
+
+    from homeassistant.helpers import device_registry as dr
+
+    form = await hass.config_entries.flow.async_init(
+        "aureon_music", context={"source": config_entries.SOURCE_USER}
+    )
+    external = await hass.config_entries.flow.async_configure(
+        form["flow_id"], {"client_id": "a" * 32}
+    )
+    await _complete(hass, external)
+    await hass.async_block_till_done()
+    (state,) = hass.states.async_all("media_player")
+    target = {"entity_id": state.entity_id}
+    speaker = {"id": "wohnung", "name": "Wohnung Musik", "is_active": False}
+    awake = {"value": False}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if url.endswith("/devices"):
+            return Response({"devices": [dict(speaker, is_active=awake["value"])]})
+        if method == "GET" and url.endswith("/player"):
+            return Response(None, 204)
+        if url.endswith("/player/recently-played"):
+            track = {
+                "uri": "spotify:track:last",
+                "name": "Where Do We Go",
+                "artists": [{"name": "LUM!X"}],
+            }
+            return Response(
+                {
+                    "items": [
+                        {"track": track, "context": {"uri": "spotify:playlist:mix"}}
+                    ]
+                }
+            )
+        if method == "PUT" and "/player" in url:
+            spotify.requests.append((method, url, kwargs))
+            return Response({}, 204) if awake["value"] else Response(None, 404)
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda delay: sleep(0))
+    alexa = MockConfigEntry(
+        domain="alexa_devices", data={"login_data": {"site": "https://www.amazon.de"}}
+    )
+    alexa.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    devices.async_get_or_create(
+        config_entry_id=alexa.entry_id,
+        identifiers={("alexa_devices", "group")},
+        name="Wohnung Musik",
+    )
+    kitchen = devices.async_get_or_create(
+        config_entry_id=alexa.entry_id,
+        identifiers={("alexa_devices", "G0001")},
+        name="Alexa - Küche",
+        serial_number="G0001",
+    )
+    sent = []
+
+    async def text_command(call):
+        sent.append(dict(call.data))
+        awake["value"] = True
+
+    hass.services.async_register("alexa_devices", "send_text_command", text_command)
+    player = next(
+        p
+        for p in async_get_platforms(hass, "aureon_music")
+        if p.domain == "media_player"
+    ).entities[state.entity_id]
+    player._pending_device = speaker
+
+    await hass.services.async_call("media_player", "media_play", target, blocking=True)
+    assert sent == [
+        {
+            "device_id": kitchen.id,
+            "text_command": "spiele Where Do We Go von LUM!X von Spotify auf Wohnung Musik",
+        }
+    ]
+    final = [c for c in spotify.requests if c[0] == "PUT"][-1]
     assert final[2]["json"] == {
         "context_uri": "spotify:playlist:mix",
         "offset": {"uri": "spotify:track:last"},

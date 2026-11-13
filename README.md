@@ -70,6 +70,7 @@ reprodução e permite uma nova tentativa no mesmo destino. A resposta da API
 do Spotify ao grupo físico Wohnung Musik continua pendente de validação.
 
 A prévia 1.1.0b10 trata alto-falantes e grupos Amazon (Alexa) que recusam o início pela Web API do
-Spotify: com a integração **Alexa Media Player** instalada, o AUREON pede à Alexa que toque a música
-nesse alto-falante, espera a sessão Spotify Connect ficar ativa e depois toca a faixa exata dentro da
-playlist. Sem Alexa Media Player, a mensagem explica isso e mostra o código HTTP do Spotify.
+Spotify: com a integração **Alexa Devices** do Home Assistant (ou **Alexa Media Player** do HACS), o AUREON
+pede à Alexa que toque a música nesse alto-falante — num grupo, por outro Echo ("spiele … von Spotify auf
+Wohnung Musik", no idioma do site Amazon) —, espera a sessão Spotify Connect ficar ativa e depois toca a faixa
+exata dentro da playlist. Sem nenhuma das duas, a mensagem explica isso e mostra o código HTTP do Spotify.

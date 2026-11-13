@@ -18,6 +18,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -52,6 +53,43 @@ def _label(item):
         if isinstance(a, dict) and a.get("name")
     ]
     return f"{item['name']} {artists[0]}" if artists else item["name"]
+
+
+# "play <song> by <artist> on Spotify (on <group>)" as Alexa understands it, by the language of the Amazon site
+ALEXA_PHRASES = {
+    "de": ("spiele {title}", " von {artist}", " von Spotify", " auf {group}"),
+    "pt": ("toque {title}", " de {artist}", " no Spotify", " em {group}"),
+    "es": ("pon {title}", " de {artist}", " en Spotify", " en {group}"),
+    "it": ("riproduci {title}", " di {artist}", " su Spotify", " su {group}"),
+    "fr": ("joue {title}", " de {artist}", " sur Spotify", " sur {group}"),
+    "en": ("play {title}", " by {artist}", " on Spotify", " on {group}"),
+}
+
+
+def _alexa_phrase(site, item, group=None):
+    host = site.rsplit("amazon.", 1)[-1].strip("/").lower()
+    lang = {
+        "de": "de",
+        "at": "de",
+        "ch": "de",
+        "com.br": "pt",
+        "es": "es",
+        "com.mx": "es",
+        "it": "it",
+        "fr": "fr",
+    }.get(host, "en")
+    title, by, service, on = ALEXA_PHRASES[lang]
+    artists = [
+        a.get("name")
+        for a in item.get("artists") or []
+        if isinstance(a, dict) and a.get("name")
+    ]
+    text = (
+        title.format(title=item["name"])
+        + (by.format(artist=artists[0]) if artists else "")
+        + service
+    )
+    return text + (on.format(group=group) if group else "")
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -243,9 +281,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         ) or None
         if not track:
             raise ServiceValidationError("Choose a song or playlist to start Spotify")
-        await self.async_start_on(
-            target, track, context, label=_label(items[0].get("track"))
-        )
+        await self.async_start_on(target, track, context, item=items[0].get("track"))
 
     async def _resume_on(self, target):
         if not await self._try_playback(self.api.play, target):
@@ -334,7 +370,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         matches = [d for d in devices if d["name"] == selected["name"]]
         return matches[0] if len(matches) == 1 else None
 
-    async def async_start_on(self, target, uri, context=None, label=None):
+    async def async_start_on(self, target, uri, context=None, item=None):
         """Start playback on the selected Connect device."""
 
         async def play(device):
@@ -370,14 +406,15 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
                 # Owner 2026-11-13 ("corrija esse problema de vez"): Amazon speakers and groups often refuse
                 # Spotify's Web API until Alexa itself starts Spotify on them. With Alexa Media Player installed,
                 # AUREON asks Alexa to play the song there, then takes over the now awake Connect session.
-                woken = await self._wake_with_alexa(target, uri, context, label)
+                woken = await self._wake_with_alexa(target, uri, context, item)
                 if woken is None:
                     raise ServiceValidationError(
                         f"Spotify could not start playback on {target['name']}"
                         f"{self._status_note()}. Amazon speakers accept Spotify from Home "
-                        "Assistant only after Alexa has started Spotify on them: install "
-                        "Alexa Media Player (HACS) so AUREON can wake them, or say "
-                        "'Alexa, play Spotify' on that speaker once."
+                        "Assistant only after Alexa has started Spotify on them: set up "
+                        "Alexa Devices (Home Assistant) or Alexa Media Player (HACS) with "
+                        "that speaker so AUREON can wake it, or say 'Alexa, play Spotify' "
+                        "on that speaker once."
                     )
                 target = woken
         self._pending_device = target
@@ -408,31 +445,41 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
                 return entry.entity_id
         return None
 
-    async def _wake_with_alexa(self, target, uri, context, label):
+    async def _wake_with_alexa(self, target, uri, context, item):
         """Let Alexa start Spotify on the speaker, wait for the Connect session, then play the exact item there.
 
-        Returns the speaker as Spotify then lists it, or None when there is no Alexa Media Player entity for it or
-        the speaker did not come up.
+        Uses Alexa Media Player (play_media SPOTIFY) or Home Assistant's own Alexa Devices integration (a text
+        command, as if spoken: "play <song> by <artist> on Spotify on <group>"). Returns the speaker as Spotify then
+        lists it, or None when neither integration knows an Echo or the speaker did not come up.
         """
-        entity_id = self._alexa_entity(target["name"])
-        if entity_id is None:
+        item = item or await self._item_for(uri or context)
+        if not item or not item.get("name"):
             return None
-        phrase = label or await self._label_for(uri or context)
-        if not phrase:
+        if entity_id := self._alexa_entity(target["name"]):
+            LOGGER.info(
+                "Waking %s through Alexa Media Player (%s)", target["name"], entity_id
+            )
+            await self.hass.services.async_call(
+                "media_player",
+                "play_media",
+                {
+                    "entity_id": entity_id,
+                    "media_content_type": "SPOTIFY",
+                    "media_content_id": _label(item),
+                },
+                blocking=True,
+            )
+        elif command := self._alexa_text_command(target["name"], item):
+            device_id, text = command
+            LOGGER.info("Waking %s through Alexa Devices: %s", target["name"], text)
+            await self.hass.services.async_call(
+                "alexa_devices",
+                "send_text_command",
+                {"device_id": device_id, "text_command": text},
+                blocking=True,
+            )
+        else:
             return None
-        LOGGER.info(
-            "Waking %s through Alexa Media Player (%s)", target["name"], entity_id
-        )
-        await self.hass.services.async_call(
-            "media_player",
-            "play_media",
-            {
-                "entity_id": entity_id,
-                "media_content_type": "SPOTIFY",
-                "media_content_id": phrase,
-            },
-            blocking=True,
-        )
         for _ in range(12):
             await asyncio.sleep(1)
             current = self._find_device(await self.async_discover_devices(), target)
@@ -455,18 +502,47 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             )
         return current
 
-    async def _label_for(self, uri):
-        """A search phrase for Alexa: a song with its artist, or the name of an album or playlist."""
+    def _alexa_text_command(self, name, item):
+        """An Echo of the Alexa Devices integration and what to tell it, in the language of its Amazon site.
+
+        A speaker group cannot take commands itself (it has no serial number), so another Echo is asked to play
+        on the group by name.
+        """
+        if not self.hass.services.has_service("alexa_devices", "send_text_command"):
+            return None
+        wanted = name.casefold().strip()
+        registry = dr.async_get(self.hass)
+        own, others, site = None, [], ""
+        for entry in self.hass.config_entries.async_entries("alexa_devices"):
+            site = site or str((entry.data.get("login_data") or {}).get("site") or "")
+            for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+                if device.disabled_by:
+                    continue
+                names = {
+                    str(n).casefold().strip()
+                    for n in (device.name_by_user, device.name)
+                    if n
+                }
+                if wanted in names and device.serial_number:
+                    own = device
+                elif device.serial_number:
+                    others.append(device)
+        speaker = own or (others[0] if others else None)
+        if speaker is None:
+            return None
+        return speaker.id, _alexa_phrase(site, item, None if own else name)
+
+    async def _item_for(self, uri):
+        """The Spotify item (song, album or playlist) behind a URI, to ask Alexa for it by name."""
         if not uri or uri.count(":") != 2:
             return None
         kind, ident = uri.split(":")[1:]
         if kind not in ("track", "album", "playlist", "artist"):
             return None
         try:
-            item = await self.api.request("GET", f"/{kind}s/{ident}")
+            return await self.api.request("GET", f"/{kind}s/{ident}")
         except (SpotifyApiError, *TRANSIENT_ERRORS[:3], ValueError):
             return None
-        return _label(item)
 
     async def async_media_pause(self):
         # nothing playing anywhere (Spotify answers 404): there is nothing to pause, so no error either
