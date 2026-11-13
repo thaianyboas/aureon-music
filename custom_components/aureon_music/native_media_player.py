@@ -31,6 +31,7 @@ from .native_spotify_api import SpotifyApiError
 from .native_spotify_oauth import SpotifyTokenRefreshError
 
 LOGGER = logging.getLogger(__name__)
+PLAYBACK_GATEWAY_ERRORS = {502, 503, 504}
 TRANSIENT_ERRORS = (
     ClientError,
     TimeoutError,
@@ -198,7 +199,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             and (playback.get("is_playing") or playback.get("item"))
             and self._pending_device is None
         ):
-            await self._control(self.api.play)
+            await self._resume_on(device)
             return
         target = await self.async_target_device()
         if (
@@ -206,15 +207,15 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             and device.get("is_active")
             and (target is None or target["id"] == device.get("id"))
         ):
-            await self._control(self.api.play, device_id=target["id"] if target else None)
+            await self._resume_on(target or device)
             return
         if target is None:
             raise ServiceValidationError(
                 "No Spotify speaker is active. Choose a speaker, then press Play."
             )
         # the paused song keeps its place: hand the session to the speaker and play
-        if playback.get("item") and await self._unless_404(
-            self.api.transfer_playback, target["id"], play=True
+        if playback.get("item") and await self._try_playback(
+            self.api.transfer_playback, target, play=True
         ):
             self._pending_device = target
             await self.coordinator.async_request_refresh()
@@ -230,6 +231,44 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not track:
             raise ServiceValidationError("Choose a song or playlist to start Spotify")
         await self.async_start_on(target, track, context)
+
+    async def _resume_on(self, target):
+        if not await self._try_playback(self.api.play, target):
+            raise ServiceValidationError("Spotify could not resume playback. Choose a song or playlist.")
+        await self.coordinator.async_request_refresh()
+
+    async def _try_playback(self, operation, target, **kwargs):
+        """Retry one ambiguous gateway failure on the same confirmed destination."""
+        device_id = target.get("id")
+        try:
+            await operation(device_id=device_id, **kwargs)
+        except SpotifyApiError as error:
+            if error.status not in PLAYBACK_GATEWAY_ERRORS or not device_id:
+                return await self._unless_404(self._fail, error)
+
+            await asyncio.sleep(0.5)
+            playback = await self._call(self.api.playback) or {}
+            device = playback.get("device") or {}
+            item = playback.get("item") or {}
+            context = playback.get("context") or {}
+            expected = kwargs.get("offset_uri") or kwargs.get("uri")
+            if (
+                device.get("id") == device_id
+                and playback.get("is_playing")
+                and (expected is None or expected in (item.get("uri"), context.get("uri")))
+            ):
+                return True
+
+            current = self._find_device(await self.async_discover_devices(), target)
+            if current is None:
+                return False
+            try:
+                return await self._unless_404(operation, device_id=current["id"], **kwargs)
+            except TRANSIENT_ERRORS as retry_error:
+                await self._call(self._fail, retry_error)
+        except (SpotifyReauthorizationRequired, *TRANSIENT_ERRORS, ValueError) as error:
+            await self._call(self._fail, error)
+        return True
 
     async def _unless_404(self, operation, *args, **kwargs):
         """Run a Spotify command; False when Spotify answers 404 (speaker asleep), other errors as usual."""
@@ -277,14 +316,12 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             if (
                 context
                 and context.startswith(("spotify:album:", "spotify:playlist:"))
-                and await self._unless_404(
-                    self.api.play, uri=context, offset_uri=uri, device_id=device["id"]
+                and await self._try_playback(
+                    self.api.play, device, uri=context, offset_uri=uri
                 )
             ):
                 return True
-            return await self._unless_404(
-                self.api.play, uri=uri, device_id=device["id"]
-            )
+            return await self._try_playback(self.api.play, device, uri=uri)
 
         if not await play(target):
             current = self._find_device(await self.async_discover_devices(), target)

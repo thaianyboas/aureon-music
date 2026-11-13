@@ -464,6 +464,7 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
         "is_playing": False,
     }
     mode = {"player": paused, "asleep": False, "missing_context": False}
+    gateway_errors = []
     original = spotify.request
 
     def request(method, url, **kwargs):
@@ -490,6 +491,15 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
         if method == "PUT" and url.endswith("/player") and mode["asleep"]:
             speaker["id"] = "wohnung-reconnected"
             mode["asleep"] = False
+        if method == "PUT" and url.endswith("/player/play") and gateway_errors:
+            spotify.requests.append((method, url, kwargs))
+            if gateway_errors.pop(0):
+                mode["player"] = {
+                    "device": {**speaker, "is_active": True},
+                    "item": {"uri": "spotify:track:last"},
+                    "is_playing": True,
+                }
+            return Response(None, 502)
         if method == "PUT" and url.endswith("/player/play") and (
             mode["asleep"] or (mode["missing_context"] and "context_uri" in kwargs["json"])
         ):
@@ -545,6 +555,19 @@ async def test_play_resumes_the_last_song_without_an_active_speaker(hass, spotif
     ]
     assert puts[-1][2]["params"] == {"device_id": "wohnung-reconnected"}
 
+    # A transient 502 is retried on the selected group. If playback already
+    # started despite the error, retrying would restart the song.
+    for already_started in (False, True):
+        gateway_errors.append(already_started)
+        spotify.requests.clear()
+        await hass.services.async_call("media_player", "media_play", target, blocking=True)
+        plays = [c for c in spotify.requests if c[0] == "PUT"]
+        assert len(plays) == (1 if already_started else 2)
+        assert all(
+            call[2]["params"] == {"device_id": "wohnung-reconnected"} for call in plays
+        )
+
+    mode["player"] = None
     # 4. no speaker chosen and none active: a clear message, nothing sent
     player._pending_device = None
     spotify.requests.clear()
