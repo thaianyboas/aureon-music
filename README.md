@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b10
+## Motor nativo — prévia HACS 1.1.0b11
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
@@ -74,3 +74,9 @@ Spotify: com a integração **Alexa Devices** do Home Assistant (ou **Alexa Medi
 pede à Alexa que toque a música nesse alto-falante — num grupo, por outro Echo ("spiele … von Spotify auf
 Wohnung Musik", no idioma do site Amazon) —, espera a sessão Spotify Connect ficar ativa e depois toca a faixa
 exata dentro da playlist. Sem nenhuma das duas, a mensagem explica isso e mostra o código HTTP do Spotify.
+
+A prévia 1.1.0b11: os alto-falantes Amazon obedecem a pausa, o play, o volume e as faixas, mas o Spotify
+muitas vezes responde HTTP 502 depois de esperar por eles. O AUREON confere o estado depois do erro e só
+mostra um erro quando o comando realmente não teve efeito. Os botões mudam na hora; se o alto-falante demora,
+o comando termina em segundo plano. Um alto-falante ou grupo Amazon que não está ativo é acordado primeiro
+pela Alexa, sem esperar pelas tentativas da Web API.

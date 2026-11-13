@@ -769,8 +769,71 @@ async def test_play_wakes_a_speaker_group_through_alexa_devices(
             "text_command": "spiele Where Do We Go von LUM!X von Spotify auf Wohnung Musik",
         }
     ]
+    # known to Alexa: woken first, so no Web API attempt waits for a gateway timeout before
+    assert len([c for c in spotify.requests if c[0] == "PUT"]) == 1
     final = [c for c in spotify.requests if c[0] == "PUT"][-1]
     assert final[2]["json"] == {
         "context_uri": "spotify:playlist:mix",
         "offset": {"uri": "spotify:track:last"},
     }
+
+
+async def test_controls_trust_the_state_after_a_gateway_error(
+    hass, spotify, monkeypatch
+):
+    """Owner 2026-11-13: pause on the Alexa group answered "Spotify returned HTTP 502" although it paused."""
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    form = await hass.config_entries.flow.async_init(
+        "aureon_music", context={"source": config_entries.SOURCE_USER}
+    )
+    external = await hass.config_entries.flow.async_configure(
+        form["flow_id"], {"client_id": "a" * 32}
+    )
+    await _complete(hass, external)
+    await hass.async_block_till_done()
+    (state,) = hass.states.async_all("media_player")
+    target = {"entity_id": state.entity_id}
+    group = {
+        "id": "wohnung",
+        "name": "Wohnung Musik",
+        "is_active": True,
+        "volume_percent": 12,
+    }
+    player_state = {"is_playing": True, "obeys": True}
+    original = spotify.request
+
+    def request(method, url, **kwargs):
+        if method == "GET" and url.endswith("/player"):
+            return Response(
+                {
+                    "device": group,
+                    "item": {"uri": "spotify:track:now"},
+                    "is_playing": player_state["is_playing"],
+                }
+            )
+        if method == "PUT" and url.endswith("/player/pause"):
+            spotify.requests.append((method, url, kwargs))
+            if player_state["obeys"]:
+                player_state["is_playing"] = False
+            return Response(None, 502)
+        return original(method, url, **kwargs)
+
+    spotify.request = request
+    sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda delay: sleep(0))
+
+    # the group paused although Spotify said 502: no error
+    await hass.services.async_call("media_player", "media_pause", target, blocking=True)
+    assert len([c for c in spotify.requests if str(c[1]).endswith("/pause")]) == 1
+
+    # it really did not pause: sent once more, then reported
+    player_state.update(is_playing=True, obeys=False)
+    spotify.requests.clear()
+    with pytest.raises(HomeAssistantError, match="502"):
+        await hass.services.async_call(
+            "media_player", "media_pause", target, blocking=True
+        )
+    assert len([c for c in spotify.requests if str(c[1]).endswith("/pause")]) == 2

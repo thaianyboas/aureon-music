@@ -284,6 +284,14 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self.async_start_on(target, track, context, item=items[0].get("track"))
 
     async def _resume_on(self, target):
+        if target.get("is_active"):
+            await self._quick(
+                self._set(state=MediaPlayerState.PLAYING),
+                self.api.play,
+                lambda p: bool(p.get("is_playing")),
+                device_id=target.get("id"),
+            )
+            return
         if not await self._try_playback(self.api.play, target):
             raise ServiceValidationError(
                 "Spotify could not resume playback. Choose a song or playlist."
@@ -372,6 +380,14 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_start_on(self, target, uri, context=None, item=None):
         """Start playback on the selected Connect device."""
+        # An Amazon speaker or group that is not awake keeps every Web API attempt waiting for a gateway timeout
+        # before it fails (owner 2026-11-13: "demora muito"): Alexa wakes it first, which takes a few seconds.
+        if not target.get("is_active") and self._is_amazon(target["name"]):
+            woken = await self._wake_with_alexa(target, uri, context, item)
+            if woken is not None:
+                self._pending_device = woken
+                await self.coordinator.async_request_refresh()
+                return
 
         async def play(device):
             if (
@@ -502,6 +518,22 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             )
         return current
 
+    def _is_amazon(self, name):
+        """A speaker or group of that name is known to Alexa Media Player or Alexa Devices."""
+        if self._alexa_entity(name):
+            return True
+        wanted = name.casefold().strip()
+        registry = dr.async_get(self.hass)
+        for entry in self.hass.config_entries.async_entries("alexa_devices"):
+            for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+                if wanted in {
+                    str(n).casefold().strip()
+                    for n in (device.name_by_user, device.name)
+                    if n
+                }:
+                    return True
+        return False
+
     def _alexa_text_command(self, name, item):
         """An Echo of the Alexa Devices integration and what to tell it, in the language of its Amazon site.
 
@@ -544,32 +576,146 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         except (SpotifyApiError, *TRANSIENT_ERRORS[:3], ValueError):
             return None
 
-    async def async_media_pause(self):
-        # nothing playing anywhere (Spotify answers 404): there is nothing to pause, so no error either
-        await self._unless_404(self.api.pause)
+    async def _command(self, operation, done, *args, quiet_404=False, **kwargs):
+        """Run a player command; trust what Spotify reports afterwards over a gateway error.
+
+        Amazon speakers and groups (owner 2026-11-13: "play e pausa sempre dão erro") obey a command but Spotify
+        often answers 502/503/504 after waiting for them. The state is read again; when it shows the command took
+        effect, there is no error. Otherwise the command is sent once more and a real failure is reported.
+        """
+        try:
+            await operation(*args, **kwargs)
+        except SpotifyApiError as error:
+            self._last_status = error.status
+            if error.status == 404 and quiet_404:
+                pass
+            elif error.status not in PLAYBACK_GATEWAY_ERRORS:
+                await self._call(self._fail, error)
+            elif not await self._took_effect(done):
+                await self._call(operation, *args, **kwargs)
+        except SpotifyReauthorizationRequired:
+            await self._call(operation, *args, **kwargs)
+        except TRANSIENT_ERRORS as error:
+            if not await self._took_effect(done):
+                await self._call(self._fail, error)
         await self.coordinator.async_request_refresh()
 
+    async def _took_effect(self, done):
+        for delay in (0.4, 1.0):
+            await asyncio.sleep(delay)
+            try:
+                playback = await self.api.playback() or {}
+            except (SpotifyApiError, *TRANSIENT_ERRORS[:3]):
+                continue
+            if done(playback):
+                return True
+        return False
+
+    async def _quick(self, optimistic, operation, done, *args, **kwargs):
+        """Show the result at once and let a slow speaker finish in the background.
+
+        The card changes immediately; if Spotify has not answered within 2 s (an Amazon speaker can keep it waiting
+        for many seconds) the command goes on in the background and the next refresh shows the real state. A failure
+        within those 2 s is reported as usual; a later one is logged and the state refreshed.
+        """
+        if optimistic:
+            optimistic()
+            self.async_write_ha_state()
+
+        async def run():
+            try:
+                await self._command(operation, done, *args, **kwargs)
+            except HomeAssistantError as error:
+                if not waiting["value"]:
+                    LOGGER.warning("Spotify command did not finish: %s", error)
+                    await self.coordinator.async_request_refresh()
+                    return
+                raise
+
+        waiting = {"value": True}
+        task = self.hass.async_create_background_task(run(), "aureon_music_command")
+        try:
+            await asyncio.wait_for(asyncio.shield(task), 2.0)
+        except TimeoutError:
+            waiting["value"] = False
+
+    def _set(self, **attrs):
+        def apply():
+            for key, value in attrs.items():
+                setattr(self, f"_attr_{key}", value)
+
+        return apply
+
+    async def async_media_pause(self):
+        # nothing playing anywhere (Spotify answers 404): there is nothing to pause, so no error either
+        await self._quick(
+            self._set(state=MediaPlayerState.PAUSED),
+            self.api.pause,
+            lambda p: not p.get("is_playing"),
+            quiet_404=True,
+        )
+
+    def _now_uri(self):
+        return ((self.coordinator.data or {}).get("item") or {}).get("uri")
+
     async def async_media_next_track(self):
-        await self._control(self.api.next_track)
+        before = self._now_uri()
+        await self._quick(
+            None,
+            self.api.next_track,
+            lambda p: (p.get("item") or {}).get("uri") != before,
+        )
 
     async def async_media_previous_track(self):
-        await self._control(self.api.previous_track)
+        before = self._now_uri()
+        await self._quick(
+            None,
+            self.api.previous_track,
+            lambda p: (
+                (p.get("item") or {}).get("uri") != before
+                or (p.get("progress_ms") or 0) < 5000
+            ),
+        )
 
     async def async_media_seek(self, position):
-        await self._control(self.api.seek, round(position * 1000))
+        ms = round(position * 1000)
+        await self._quick(
+            None,
+            self.api.seek,
+            lambda p: abs((p.get("progress_ms") or 0) - ms) < 4000,
+            ms,
+        )
 
     async def async_set_volume_level(self, volume):
-        await self._control(self.api.volume, round(volume * 100))
+        pct = round(volume * 100)
+        await self._quick(
+            self._set(volume_level=volume),
+            self.api.volume,
+            lambda p: (
+                abs(((p.get("device") or {}).get("volume_percent") or -9) - pct) <= 2
+            ),
+            pct,
+        )
 
     async def async_set_shuffle(self, shuffle):
-        await self._control(self.api.shuffle, shuffle)
+        await self._quick(
+            self._set(shuffle=shuffle),
+            self.api.shuffle,
+            lambda p: p.get("shuffle_state") == shuffle,
+            shuffle,
+        )
 
     async def async_set_repeat(self, repeat):
-        await self._control(
+        mode = {
+            RepeatMode.ONE: "track",
+            RepeatMode.ALL: "context",
+            RepeatMode.OFF: "off",
+        }[repeat]
+        await self._quick(
+            self._set(repeat=repeat),
             self.api.repeat,
-            {RepeatMode.ONE: "track", RepeatMode.ALL: "context", RepeatMode.OFF: "off"}[
-                repeat
-            ],
+            lambda p: p.get("repeat_state") == mode,
+            mode,
         )
 
     async def async_play_media(self, media_type, media_id, **kwargs):
