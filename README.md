@@ -19,7 +19,7 @@ No app Spotify Developer, o *Redirect URI* continua `https://my.home-assistant.i
 `scripts/build_from_upstream.py <spotifyplus> <spotcast> custom_components/aureon_music` refaz as pastas `*_core`
 a partir de uma nova versão dos projetos originais. Licenças e mudanças: `NOTICE.md`, `LICENSE`, `licenses/`.
 
-## Motor nativo — prévia HACS 1.1.0b11
+## Motor nativo — prévia HACS 1.1.0b12
 
 O formulário **Conectar ao Spotify** cria uma entrada nativa e usa a Spotify Web API com OAuth/PKCE.
 As entradas SpotifyPlus/Spotcast continuam disponíveis durante a validação. A prévia está disponível pela branch
@@ -80,3 +80,7 @@ muitas vezes responde HTTP 502 depois de esperar por eles. O AUREON confere o es
 mostra um erro quando o comando realmente não teve efeito. Os botões mudam na hora; se o alto-falante demora,
 o comando termina em segundo plano. Um alto-falante ou grupo Amazon que não está ativo é acordado primeiro
 pela Alexa, sem esperar pelas tentativas da Web API.
+
+A prévia 1.1.0b12 retoma uma sessão ativa sem consultar antes o Spotify e espera no máximo 0,8 s pela resposta
+de um alto-falante lento; o resto termina em segundo plano. Depois de cada comando o estado é lido de novo
+aos 1, 2,5 e 5 s, e enquanto a música toca o cartão acompanha o Spotify a cada 5 s (antes 15 s).

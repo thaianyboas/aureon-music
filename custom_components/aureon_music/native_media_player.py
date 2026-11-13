@@ -20,6 +20,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
@@ -207,7 +208,30 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     def _handle_coordinator_update(self):
         self._apply_state()
+        # while music plays, the card follows Spotify every 5 s; otherwise every 15 s
+        playing = bool((self.coordinator.data or {}).get("is_playing"))
+        self.coordinator.update_interval = timedelta(seconds=5 if playing else 15)
         super()._handle_coordinator_update()
+
+    async def _refreshed(self):
+        """Refresh now and again 1, 2.5 and 5 s later: a speaker often applies a command a moment after Spotify
+        answers, and the card should show the new song or state as soon as it is real (owner 2026-11-13)."""
+        await self.coordinator.async_request_refresh()
+        for cancel in getattr(self, "_follow_ups", []):
+            cancel()
+        self._follow_ups = [
+            async_call_later(self.hass, delay, self._follow_up)
+            for delay in (1.0, 2.5, 5.0)
+        ]
+
+    async def _follow_up(self, _now):
+        await self.coordinator.async_refresh()
+
+    async def async_will_remove_from_hass(self):
+        for cancel in getattr(self, "_follow_ups", []):
+            cancel()
+        self._follow_ups = []
+        await super().async_will_remove_from_hass()
 
     async def _call(self, operation, *args, **kwargs):
         try:
@@ -234,7 +258,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def _control(self, operation, *args, **kwargs):
         await self._call(operation, *args, **kwargs)
-        await self.coordinator.async_request_refresh()
+        await self._refreshed()
 
     async def async_media_play(self):
         """Play resumes the last song, also when no speaker is active (owner 2026-11-12).
@@ -243,6 +267,16 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         404. The paused song moves with its position to the chosen speaker; without one, the last played song
         starts there inside its album or playlist.
         """
+        # a session that is active right now resumes at once, without asking Spotify for state and speakers first
+        cached = self.coordinator.data or {}
+        cached_device = cached.get("device") or {}
+        if (
+            cached_device.get("is_active")
+            and cached.get("item")
+            and self._pending_device is None
+        ):
+            await self._resume_on(cached_device)
+            return
         playback = await self._call(self.api.playback) or {}
         device = playback.get("device") or {}
         if (
@@ -269,7 +303,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             self.api.transfer_playback, target, play=True
         ):
             self._pending_device = target
-            await self.coordinator.async_request_refresh()
+            await self._refreshed()
             return
         recent = await self._call(
             self.api.request, "GET", "/me/player/recently-played", params={"limit": 1}
@@ -296,7 +330,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             raise ServiceValidationError(
                 "Spotify could not resume playback. Choose a song or playlist."
             )
-        await self.coordinator.async_request_refresh()
+        await self._refreshed()
 
     async def _try_playback(self, operation, target, **kwargs):
         """Retry one ambiguous gateway failure on the same confirmed destination."""
@@ -386,7 +420,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             woken = await self._wake_with_alexa(target, uri, context, item)
             if woken is not None:
                 self._pending_device = woken
-                await self.coordinator.async_request_refresh()
+                await self._refreshed()
                 return
 
         async def play(device):
@@ -434,7 +468,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
                     )
                 target = woken
         self._pending_device = target
-        await self.coordinator.async_request_refresh()
+        await self._refreshed()
 
     def _status_note(self):
         status = getattr(self, "_last_status", None)
@@ -598,7 +632,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         except TRANSIENT_ERRORS as error:
             if not await self._took_effect(done):
                 await self._call(self._fail, error)
-        await self.coordinator.async_request_refresh()
+        await self._refreshed()
 
     async def _took_effect(self, done):
         for delay in (0.4, 1.0):
@@ -614,9 +648,9 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
     async def _quick(self, optimistic, operation, done, *args, **kwargs):
         """Show the result at once and let a slow speaker finish in the background.
 
-        The card changes immediately; if Spotify has not answered within 2 s (an Amazon speaker can keep it waiting
+        The card changes immediately; if Spotify has not answered within 0.8 s (an Amazon speaker can keep it waiting
         for many seconds) the command goes on in the background and the next refresh shows the real state. A failure
-        within those 2 s is reported as usual; a later one is logged and the state refreshed.
+        within those 0.8 s is reported as usual; a later one is logged and the state refreshed.
         """
         if optimistic:
             optimistic()
@@ -628,14 +662,14 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
             except HomeAssistantError as error:
                 if not waiting["value"]:
                     LOGGER.warning("Spotify command did not finish: %s", error)
-                    await self.coordinator.async_request_refresh()
+                    await self._refreshed()
                     return
                 raise
 
         waiting = {"value": True}
         task = self.hass.async_create_background_task(run(), "aureon_music_command")
         try:
-            await asyncio.wait_for(asyncio.shield(task), 2.0)
+            await asyncio.wait_for(asyncio.shield(task), 0.8)
         except TimeoutError:
             waiting["value"] = False
 
@@ -749,7 +783,7 @@ class NativeSpotifyPlayer(CoordinatorEntity, MediaPlayerEntity):
         if playback.get("is_playing") or playback.get("item"):
             await self._call(self.api.transfer_playback, device["id"], play=play)
             self._pending_device = None
-            await self.coordinator.async_request_refresh()
+            await self._refreshed()
             return
 
         self._pending_device = device
